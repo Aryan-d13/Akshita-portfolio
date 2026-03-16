@@ -1,0 +1,24 @@
+{
+  "name": "index-html",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "dompurify": "^3.3.3",
+    "firebase": "^12.10.0",
+    "firebase-admin": "^13.7.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.15.9",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6"
+  }
+}
