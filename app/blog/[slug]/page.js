@@ -1,24 +1,24 @@
 import Rail from "@/components/Rail";
 import BlogPostContent from "@/components/BlogPostContent";
 
-export function generateMetadata({ params }) {
-    const slug = params.slug;
+export async function generateMetadata({ params }) {
+    const slug = (await params).slug;
     const title = slug
-        .split("-")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
+        ? slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+        : "Post";
     return {
         title: `${title} | Journal — Akshita Agrawal`,
         description: `Read "${title}" on Akshita Agrawal's journal.`,
     };
 }
 
-export default function BlogPostPage({ params }) {
+export default async function BlogPostPage({ params }) {
+    const slug = (await params).slug;
     return (
         <div className="page">
             <Rail />
             <main className="main-content" id="main-content">
-                <BlogPostContent slug={params.slug} />
+                <BlogPostContent slug={slug} />
             </main>
         </div>
     );
