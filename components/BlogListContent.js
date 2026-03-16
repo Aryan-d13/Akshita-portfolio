@@ -78,12 +78,18 @@ export default function BlogListContent() {
         <div className="blog-list">
           {posts.map((post) => (
             <Reveal key={post.id} className="blog-card">
-              <Link href={`/blog/${post.slug}`} className="blog-card-link">
+              <div className="blog-card-inner">
                 <span className="blog-date">{formatDate(post.createdAt)}</span>
-                <h3 className="blog-title">{post.title}</h3>
+                <h3 className="blog-title">
+                  <Link href={`/blog/${post.slug}`} className="blog-title-link">
+                    {post.title}
+                  </Link>
+                </h3>
                 <p className="blog-excerpt">{getExcerpt(post.body)}</p>
-                <span className="blog-read-more">Continue reading →</span>
-              </Link>
+                <Link href={`/blog/${post.slug}`} className="blog-read-more">
+                  Continue reading →
+                </Link>
+              </div>
             </Reveal>
           ))}
         </div>
@@ -141,7 +147,7 @@ export default function BlogListContent() {
           max-width: 36ch;
         }
 
-        .blog-card-link {
+        .blog-card-inner {
           display: grid;
           gap: var(--space-2);
           padding: var(--space-4);
@@ -156,9 +162,18 @@ export default function BlogListContent() {
           transition: transform var(--transition), box-shadow var(--transition);
         }
 
-        .blog-card-link:hover {
+        .blog-card-inner:hover {
           transform: translateY(-4px);
           box-shadow: 0 26px 54px rgba(64, 44, 31, 0.14);
+        }
+
+        .blog-title-link {
+          color: inherit;
+          text-decoration: none;
+        }
+
+        .blog-title-link:hover {
+          color: var(--accent);
         }
 
         .blog-date {

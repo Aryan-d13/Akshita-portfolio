@@ -120,9 +120,21 @@ export default function GalleryContent() {
         }
 
         .gallery-skeleton {
-          width: 150px;
-          height: 180px;
+          width: 300px;
+          height: 360px;
           border-radius: 2px;
+          padding: 10px 10px 38px 10px;
+          background-color: #ffffff;
+          border: 1px solid rgba(0, 0, 0, 0.04);
+          box-shadow: 0 8px 24px rgba(36, 26, 22, 0.08);
+          display: flex;
+        }
+
+        .gallery-skeleton::before {
+          content: "";
+          width: 100%;
+          height: 100%;
+          border-radius: 1px;
           background: linear-gradient(
             110deg,
             rgba(180, 93, 57, 0.06) 8%,
@@ -131,9 +143,6 @@ export default function GalleryContent() {
           );
           background-size: 200% 100%;
           animation: shimmer 1.4s ease-in-out infinite;
-          padding: 10px 10px 32px 10px;
-          background-color: #ffffff;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
         }
 
         @keyframes shimmer {

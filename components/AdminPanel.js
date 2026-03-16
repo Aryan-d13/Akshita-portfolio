@@ -23,6 +23,7 @@ import {
 
 const ADMIN_PASSWORD = "akshita2025";
 const AUTH_KEY = "portfolio_admin_auth";
+import imageCompression from "browser-image-compression";
 
 /* ═══════════════════════════════════════════════════════════
    ADMIN PANEL (Top-Level)
@@ -336,12 +337,33 @@ function PhotoManager() {
     images.forEach(uploadFile);
   }
 
-  function uploadFile(file) {
+  async function uploadFile(file) {
     const id = Math.random().toString(36).slice(2);
-    const storageRef = ref(storage, `photos/${Date.now()}_${file.name}`);
-    const task = uploadBytesResumable(storageRef, file);
+    const originalName = file.name.split('.')[0];
+    const webpName = `${Date.now()}_${originalName}.webp`;
 
-    setUploading((prev) => [...prev, { id, name: file.name, progress: 0 }]);
+    setUploading((prev) => [...prev, { id, name: "Compressing...", progress: 0 }]);
+
+    let fileToUpload = file;
+    try {
+      const options = {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 2048,
+        useWebWorker: true,
+        fileType: "image/webp",
+        initialQuality: 0.85
+      };
+      fileToUpload = await imageCompression(file, options);
+    } catch (error) {
+      console.error("Compression fell back to original file:", error);
+    }
+
+    const storageRef = ref(storage, `photos/${webpName}`);
+    const task = uploadBytesResumable(storageRef, fileToUpload);
+
+    setUploading((prev) =>
+      prev.map((u) => (u.id === id ? { ...u, name: webpName } : u))
+    );
 
     task.on(
       "state_changed",
@@ -359,7 +381,8 @@ function PhotoManager() {
       },
       async () => {
         const url = await getDownloadURL(task.snapshot.ref);
-        // Get image dimensions
+        // Get image dimensions for Next/Image 
+        const blobUrl = URL.createObjectURL(fileToUpload);
         const img = new window.Image();
         img.onload = async () => {
           await addDoc(collection(db, "photos"), {
@@ -371,9 +394,10 @@ function PhotoManager() {
             storagePath: storageRef.fullPath,
             createdAt: serverTimestamp(),
           });
+          URL.revokeObjectURL(blobUrl);
           setUploading((prev) => prev.filter((u) => u.id !== id));
         };
-        img.src = url;
+        img.src = blobUrl;
       }
     );
   }

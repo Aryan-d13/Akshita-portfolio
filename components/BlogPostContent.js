@@ -5,7 +5,7 @@ import Link from "next/link";
 import Reveal from "./Reveal";
 import { db } from "@/lib/firebase";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import DOMPurify from "dompurify";
+import DOMPurify from "isomorphic-dompurify";
 
 export default function BlogPostContent({ slug }) {
   const [post, setPost] = useState(null);
@@ -46,7 +46,6 @@ export default function BlogPostContent({ slug }) {
   }
 
   function sanitize(html) {
-    if (typeof window === "undefined") return html;
     return DOMPurify.sanitize(html, {
       ALLOWED_TAGS: [
         "p", "br", "strong", "em", "u", "s", "a", "ul", "ol", "li",
