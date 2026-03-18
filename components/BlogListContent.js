@@ -39,7 +39,7 @@ export default function BlogListContent() {
     });
   }
 
-  function getExcerpt(body, maxLen = 200) {
+  function getExcerpt(body, maxLen = 180) {
     if (!body) return "";
     const plain = body.replace(/<[^>]+>/g, "");
     return plain.length > maxLen ? plain.slice(0, maxLen) + "…" : plain;
@@ -59,56 +59,54 @@ export default function BlogListContent() {
       </Reveal>
 
       {loading ? (
-        <div className="blog-list">
+        <div className="journal-list">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="blog-card-skeleton" />
+            <div key={i} className="journal-skeleton" />
           ))}
         </div>
       ) : posts.length === 0 ? (
-        <Reveal className="blog-empty">
-          <div className="blog-empty-inner">
-            <span className="blog-empty-icon" aria-hidden="true">✎</span>
+        <Reveal className="journal-empty">
+          <div className="journal-empty-inner">
+            <span className="journal-empty-mark" aria-hidden="true">✎</span>
             <p>No journal entries yet.</p>
-            <p className="blog-empty-sub">
-              Posts will appear here as they&apos;re published from the admin panel.
+            <p className="journal-empty-sub">
+              Posts will appear here once they&apos;re published.
             </p>
           </div>
         </Reveal>
       ) : (
-        <div className="blog-list">
-          {posts.map((post) => (
-            <Reveal key={post.id} className="blog-card">
-              <div className="blog-card-inner">
-                <span className="blog-date">{formatDate(post.createdAt)}</span>
-                <h3 className="blog-title">
-                  <Link href={`/blog/${post.slug}`} className="blog-title-link">
-                    {post.title}
-                  </Link>
-                </h3>
-                <p className="blog-excerpt">{getExcerpt(post.body)}</p>
-                <Link href={`/blog/${post.slug}`} className="blog-read-more">
-                  Continue reading →
-                </Link>
-              </div>
+        <div className="journal-list">
+          {posts.map((post, i) => (
+            <Reveal
+              key={post.id}
+              className="journal-card"
+              style={{ transitionDelay: `${i * 50}ms` }}
+            >
+              <Link href={`/blog/${post.slug}`} className="journal-card-link">
+                <span className="journal-date">{formatDate(post.createdAt)}</span>
+                <h3 className="journal-title">{post.title}</h3>
+                <p className="journal-excerpt">{getExcerpt(post.body)}</p>
+                <span className="journal-continue">Continue reading →</span>
+              </Link>
             </Reveal>
           ))}
         </div>
       )}
 
       <style jsx>{`
-        .blog-list {
+        .journal-list {
           display: grid;
-          gap: var(--space-4);
+          gap: var(--space-3);
         }
 
-        .blog-card-skeleton {
-          height: 160px;
+        .journal-skeleton {
+          height: 140px;
           border-radius: var(--radius-md);
           background: linear-gradient(
             110deg,
-            rgba(180, 93, 57, 0.06) 8%,
-            rgba(180, 93, 57, 0.12) 18%,
-            rgba(180, 93, 57, 0.06) 33%
+            rgba(180, 93, 57, 0.04) 8%,
+            rgba(180, 93, 57, 0.09) 18%,
+            rgba(180, 93, 57, 0.04) 33%
           );
           background-size: 200% 100%;
           animation: shimmer 1.4s ease-in-out infinite;
@@ -119,92 +117,91 @@ export default function BlogListContent() {
           100% { background-position: -200% 0; }
         }
 
-        .blog-empty {
+        .journal-empty {
           text-align: center;
           padding: var(--space-10) var(--space-4);
         }
 
-        .blog-empty-inner {
+        .journal-empty-inner {
           display: grid;
           gap: var(--space-2);
           justify-items: center;
         }
 
-        .blog-empty-icon {
-          font-size: 3rem;
-          color: rgba(180, 93, 57, 0.2);
+        .journal-empty-mark {
+          font-size: 2.8rem;
+          color: rgba(180, 93, 57, 0.16);
           line-height: 1;
         }
 
-        .blog-empty p {
+        .journal-empty p {
           margin: 0;
           color: var(--muted);
-          font-size: 1.1rem;
+          font-size: 1.05rem;
         }
 
-        .blog-empty-sub {
-          font-size: 0.9375rem !important;
-          max-width: 36ch;
+        .journal-empty-sub {
+          font-size: 0.875rem !important;
+          max-width: 32ch;
         }
 
-        .blog-card-inner {
+        .journal-card-link {
           display: grid;
-          gap: var(--space-2);
+          gap: 10px;
           padding: var(--space-4);
           border: 1px solid var(--border);
-          border-radius: var(--radius-md);
+          border-left: 3px solid transparent;
+          border-radius: 4px var(--radius-md) var(--radius-md) 4px;
           background: linear-gradient(
             180deg,
-            rgba(255, 255, 255, 0.72),
-            rgba(249, 242, 233, 0.86)
+            rgba(255, 255, 255, 0.55),
+            rgba(249, 242, 233, 0.72)
           );
           box-shadow: var(--shadow-soft);
-          transition: transform var(--transition), box-shadow var(--transition);
-        }
-
-        .blog-card-inner:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 26px 54px rgba(64, 44, 31, 0.14);
-        }
-
-        .blog-title-link {
-          color: inherit;
           text-decoration: none;
+          color: inherit;
+          transition:
+            transform var(--transition),
+            box-shadow var(--transition),
+            border-color var(--transition);
         }
 
-        .blog-title-link:hover {
-          color: var(--accent);
+        .journal-card-link:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 20px 48px rgba(64, 44, 31, 0.12);
+          border-left-color: var(--accent);
         }
 
-        .blog-date {
-          font-size: 0.75rem;
+        .journal-date {
+          font-size: 0.7rem;
           font-weight: 700;
           letter-spacing: 0.12em;
           text-transform: uppercase;
           color: var(--accent);
         }
 
-        .blog-title {
+        .journal-title {
           margin: 0;
           font-family: var(--font-display);
-          font-size: clamp(1.4rem, 3vw, 2rem);
-          line-height: 1.1;
+          font-size: clamp(1.3rem, 2.8vw, 1.8rem);
+          line-height: 1.15;
           letter-spacing: -0.02em;
           font-weight: 400;
         }
 
-        .blog-excerpt {
+        .journal-excerpt {
           margin: 0;
           color: var(--muted);
           line-height: 1.7;
-          max-width: 60ch;
+          font-size: 0.9375rem;
+          max-width: 56ch;
         }
 
-        .blog-read-more {
-          font-size: 0.875rem;
+        .journal-continue {
+          font-size: 0.8125rem;
           font-weight: 600;
           color: var(--accent);
-          margin-top: var(--space-1);
+          margin-top: 4px;
         }
       `}</style>
     </section>

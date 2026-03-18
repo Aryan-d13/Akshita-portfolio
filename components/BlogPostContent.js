@@ -61,13 +61,13 @@ export default function BlogPostContent({ slug }) {
         <div className="post-skeleton" />
         <style jsx>{`
           .post-skeleton {
-            height: 400px;
+            height: 360px;
             border-radius: var(--radius-md);
             background: linear-gradient(
               110deg,
-              rgba(180, 93, 57, 0.06) 8%,
-              rgba(180, 93, 57, 0.12) 18%,
-              rgba(180, 93, 57, 0.06) 33%
+              rgba(180, 93, 57, 0.04) 8%,
+              rgba(180, 93, 57, 0.09) 18%,
+              rgba(180, 93, 57, 0.04) 33%
             );
             background-size: 200% 100%;
             animation: shimmer 1.4s ease-in-out infinite;
@@ -100,22 +100,17 @@ export default function BlogPostContent({ slug }) {
   return (
     <section className="section">
       <Reveal className="post-article">
-        <div style={{ display: "flex", gap: "24px" }}>
-          <Link href="/" className="post-back">
-            ← Home
-          </Link>
-          <Link href="/blog" className="post-back">
-            ← Journal
-          </Link>
-        </div>
+        <nav className="post-breadcrumbs">
+          <Link href="/" className="post-nav-link">Home</Link>
+          <span className="post-nav-sep" aria-hidden="true">/</span>
+          <Link href="/blog" className="post-nav-link">Journal</Link>
+        </nav>
         <span className="post-date">{formatDate(post.createdAt)}</span>
         <h1 className="post-title">{post.title}</h1>
         {post.tags && post.tags.length > 0 && (
           <div className="post-tags">
             {post.tags.map((tag) => (
-              <span key={tag} className="post-tag">
-                {tag}
-              </span>
+              <span key={tag} className="post-tag">{tag}</span>
             ))}
           </div>
         )}
@@ -127,25 +122,35 @@ export default function BlogPostContent({ slug }) {
 
       <style jsx>{`
         .post-article {
-          max-width: 65ch;
+          max-width: 62ch;
         }
 
-        .post-back {
-          display: inline-block;
-          font-size: 0.875rem;
+        .post-breadcrumbs {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: var(--space-4);
+        }
+
+        .post-nav-link {
+          font-size: 0.8125rem;
           font-weight: 600;
           color: var(--accent);
-          margin-bottom: var(--space-4);
-          transition: transform var(--transition);
+          transition: color var(--transition);
         }
 
-        .post-back:hover {
-          transform: translateX(-4px);
+        .post-nav-link:hover {
+          color: var(--accent-deep);
+        }
+
+        .post-nav-sep {
+          color: var(--tertiary);
+          font-size: 0.75rem;
         }
 
         .post-date {
           display: block;
-          font-size: 0.75rem;
+          font-size: 0.7rem;
           font-weight: 700;
           letter-spacing: 0.12em;
           text-transform: uppercase;
@@ -156,8 +161,8 @@ export default function BlogPostContent({ slug }) {
         .post-title {
           margin: 0 0 var(--space-3);
           font-family: var(--font-display);
-          font-size: clamp(2rem, 5vw, 3.4rem);
-          line-height: 1;
+          font-size: clamp(2rem, 4.8vw, 3.2rem);
+          line-height: 1.02;
           letter-spacing: -0.03em;
           font-weight: 350;
         }
@@ -165,16 +170,16 @@ export default function BlogPostContent({ slug }) {
         .post-tags {
           display: flex;
           flex-wrap: wrap;
-          gap: var(--space-1);
+          gap: 6px;
           margin-bottom: var(--space-5);
         }
 
         .post-tag {
-          padding: 6px 14px;
+          padding: 5px 12px;
           border-radius: 999px;
-          background: rgba(180, 93, 57, 0.1);
+          background: rgba(180, 93, 57, 0.08);
           color: var(--accent);
-          font-size: 0.8125rem;
+          font-size: 0.75rem;
           font-weight: 600;
         }
 
@@ -186,36 +191,37 @@ export default function BlogPostContent({ slug }) {
 
       <style jsx global>{`
         .post-body {
-          line-height: 1.85;
+          line-height: 1.88;
           color: var(--text);
-          font-size: 1.05rem;
+          font-size: 1.0625rem;
         }
 
         .post-body p {
-          margin: 0 0 1.4em;
+          margin: 0 0 1.5em;
         }
 
         .post-body h2,
         .post-body h3 {
           font-family: var(--font-display);
-          margin: 2em 0 0.6em;
+          margin: 2.2em 0 0.6em;
           line-height: 1.15;
           letter-spacing: -0.02em;
+          font-weight: 400;
         }
 
         .post-body h2 {
-          font-size: 1.6rem;
+          font-size: 1.5rem;
         }
 
         .post-body h3 {
-          font-size: 1.3rem;
+          font-size: 1.25rem;
         }
 
         .post-body blockquote {
-          margin: 1.6em 0;
+          margin: 1.8em 0;
           padding: var(--space-3) var(--space-4);
-          border-left: 3px solid var(--accent);
-          background: rgba(180, 93, 57, 0.06);
+          border-left: 2px solid var(--accent);
+          background: rgba(180, 93, 57, 0.04);
           border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
           font-style: italic;
           color: var(--muted);
@@ -229,23 +235,28 @@ export default function BlogPostContent({ slug }) {
           color: var(--accent);
           text-decoration: underline;
           text-underline-offset: 3px;
+          text-decoration-thickness: 1px;
+        }
+
+        .post-body a:hover {
+          color: var(--accent-deep);
         }
 
         .post-body ul,
         .post-body ol {
-          padding-left: 1.4em;
-          margin: 0 0 1.4em;
+          padding-left: 1.3em;
+          margin: 0 0 1.5em;
         }
 
         .post-body li {
-          margin-bottom: 0.4em;
+          margin-bottom: 0.5em;
         }
 
         .post-body code {
           padding: 2px 6px;
-          background: rgba(122, 103, 83, 0.1);
+          background: rgba(122, 103, 83, 0.08);
           border-radius: 4px;
-          font-size: 0.9em;
+          font-size: 0.88em;
         }
 
         .post-body pre {
@@ -254,7 +265,7 @@ export default function BlogPostContent({ slug }) {
           color: var(--surface-solid);
           border-radius: var(--radius-sm);
           overflow-x: auto;
-          margin: 1.6em 0;
+          margin: 1.8em 0;
         }
 
         .post-body pre code {
@@ -267,14 +278,14 @@ export default function BlogPostContent({ slug }) {
           max-width: 100%;
           height: auto;
           border-radius: var(--radius-sm);
-          margin: 1.6em 0;
+          margin: 1.8em 0;
         }
 
         .post-body hr {
           border: none;
           height: 1px;
           background: var(--border);
-          margin: 2em 0;
+          margin: 2.4em 0;
         }
       `}</style>
     </section>

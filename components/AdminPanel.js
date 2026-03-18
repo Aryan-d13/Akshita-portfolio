@@ -2,167 +2,138 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import {
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  query,
-  orderBy,
-  onSnapshot,
-  serverTimestamp,
+    collection,
+    addDoc,
+    updateDoc,
+    deleteDoc,
+    doc,
+    setDoc,
+    query,
+    orderBy,
+    onSnapshot,
+    serverTimestamp,
 } from "firebase/firestore";
-import {
-  ref,
-  uploadBytesResumable,
-  getDownloadURL,
-  deleteObject,
-} from "firebase/storage";
+import { defaultSiteContent } from "@/lib/seedContent";
 
 const ADMIN_PASSWORD = "akshita2025";
 const AUTH_KEY = "portfolio_admin_auth";
-import imageCompression from "browser-image-compression";
+const DRAFT_KEY = "portfolio_blog_draft";
 
 /* ═══════════════════════════════════════════════════════════
    ADMIN PANEL (Top-Level)
    ═══════════════════════════════════════════════════════════ */
 
 export default function AdminPanel() {
-  const [authed, setAuthed] = useState(false);
-  const [tab, setTab] = useState("photos");
+    const [authed, setAuthed] = useState(false);
+    const [tab, setTab] = useState("site");
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const saved = sessionStorage.getItem(AUTH_KEY);
-      if (saved === "true") setAuthed(true);
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            const saved = sessionStorage.getItem(AUTH_KEY);
+            if (saved === "true") setAuthed(true);
+        }
+    }, []);
+
+    function handleLogin(pw) {
+        if (pw === ADMIN_PASSWORD) {
+            setAuthed(true);
+            sessionStorage.setItem(AUTH_KEY, "true");
+            return true;
+        }
+        return false;
     }
-  }, []);
 
-  function handleLogin(pw) {
-    if (pw === ADMIN_PASSWORD) {
-      setAuthed(true);
-      sessionStorage.setItem(AUTH_KEY, "true");
-      return true;
-    }
-    return false;
-  }
+    if (!authed) return <PasswordGate onLogin={handleLogin} />;
 
-  if (!authed) return <PasswordGate onLogin={handleLogin} />;
+    return (
+        <div className="adm-shell">
+            <div className="adm-header">
+                <Link href="/" className="adm-home" title="Back to Portfolio">⌂</Link>
+                <h1 className="adm-title">Admin</h1>
+                <div className="adm-tabs">
+                    <button
+                        className={`adm-tab ${tab === "site" ? "active" : ""}`}
+                        onClick={() => setTab("site")}
+                    >
+                        Site Content
+                    </button>
+                    <button
+                        className={`adm-tab ${tab === "blog" ? "active" : ""}`}
+                        onClick={() => setTab("blog")}
+                    >
+                        Blog
+                    </button>
+                </div>
+                <button
+                    className="adm-logout"
+                    onClick={() => {
+                        sessionStorage.removeItem(AUTH_KEY);
+                        setAuthed(false);
+                    }}
+                >
+                    Log out
+                </button>
+            </div>
 
-  return (
-    <div className="admin-shell">
-      <div className="admin-header">
-        <Link href="/" className="admin-home-btn" title="Back to Portfolio Home">
-          ⌂
-        </Link>
-        <h1 className="admin-title">Admin</h1>
-        <div className="admin-tabs">
-          <button
-            className={`admin-tab ${tab === "photos" ? "active" : ""}`}
-            onClick={() => setTab("photos")}
-          >
-            Photos
-          </button>
-          <button
-            className={`admin-tab ${tab === "blog" ? "active" : ""}`}
-            onClick={() => setTab("blog")}
-          >
-            Blog
-          </button>
-        </div>
-        <button
-          className="admin-logout"
-          onClick={() => {
-            sessionStorage.removeItem(AUTH_KEY);
-            setAuthed(false);
-          }}
-        >
-          Log out
-        </button>
-      </div>
+            {tab === "site" ? <SiteContentManager /> : <BlogManager />}
 
-      {tab === "photos" ? <PhotoManager /> : <BlogManager />}
-
-      <style jsx>{`
-        .admin-shell {
-          max-width: 960px;
+            <style jsx>{`
+        .adm-shell {
+          max-width: 920px;
           margin: 0 auto;
           padding: var(--space-5) var(--space-3);
           min-height: 100vh;
           position: relative;
           z-index: 1;
+          transition: max-width 0.3s ease;
         }
-
-        .admin-header {
+        .adm-shell:has(.ai-panel-open) {
+          max-width: 1400px;
+        }
+        .adm-header {
           display: flex;
           align-items: center;
           gap: var(--space-3);
           margin-bottom: var(--space-6);
           flex-wrap: wrap;
         }
-
-        .admin-home-btn {
+        .adm-home {
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 42px;
-          height: 42px;
+          width: 40px;
+          height: 40px;
           border-radius: 50%;
           background: var(--primary);
           color: var(--surface-solid);
-          font-size: 1.25rem;
+          font-size: 1.2rem;
           text-decoration: none;
           transition: all var(--transition);
-          box-shadow: 0 4px 12px rgba(36, 26, 22, 0.2);
+          box-shadow: 0 4px 10px rgba(36, 26, 22, 0.18);
         }
-
-        .admin-home-btn:hover {
+        .adm-home:hover {
           transform: translateY(-2px);
           background: var(--accent);
-          box-shadow: 0 6px 16px rgba(180, 93, 57, 0.3);
         }
-
-        .admin-title {
+        .adm-title {
           margin: 0;
           font-family: var(--font-display);
-          font-size: 2rem;
+          font-size: 1.8rem;
           font-weight: 350;
           letter-spacing: -0.03em;
         }
-
-        .admin-tabs {
+        .adm-tabs {
           display: flex;
           gap: 4px;
           padding: 4px;
           border-radius: 999px;
           background: rgba(122, 103, 83, 0.08);
         }
-
-        .admin-tab {
-          padding: 10px 20px;
+        .adm-tab {
+          padding: 9px 18px;
           border: none;
-          border-radius: 999px;
-          background: transparent;
-          color: var(--muted);
-          font-family: var(--font-body);
-          font-size: 0.875rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all var(--transition);
-        }
-
-        .admin-tab.active {
-          background: var(--surface-solid);
-          color: var(--text);
-          box-shadow: 0 2px 8px rgba(64, 44, 31, 0.1);
-        }
-
-        .admin-logout {
-          margin-left: auto;
-          padding: 8px 18px;
-          border: 1px solid rgba(122, 103, 83, 0.16);
           border-radius: 999px;
           background: transparent;
           color: var(--muted);
@@ -172,14 +143,31 @@ export default function AdminPanel() {
           cursor: pointer;
           transition: all var(--transition);
         }
-
-        .admin-logout:hover {
-          border-color: rgba(180, 93, 57, 0.3);
+        .adm-tab.active {
+          background: var(--surface-solid);
+          color: var(--text);
+          box-shadow: 0 2px 8px rgba(64, 44, 31, 0.08);
+        }
+        .adm-logout {
+          margin-left: auto;
+          padding: 8px 16px;
+          border: 1px solid var(--border);
+          border-radius: 999px;
+          background: transparent;
+          color: var(--muted);
+          font-family: var(--font-body);
+          font-size: 0.8125rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all var(--transition);
+        }
+        .adm-logout:hover {
+          border-color: rgba(180, 93, 57, 0.24);
           color: var(--accent);
         }
       `}</style>
-    </div>
-  );
+        </div>
+    );
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -187,51 +175,40 @@ export default function AdminPanel() {
    ═══════════════════════════════════════════════════════════ */
 
 function PasswordGate({ onLogin }) {
-  const [pw, setPw] = useState("");
-  const [error, setError] = useState(false);
-  const inputRef = useRef(null);
+    const [pw, setPw] = useState("");
+    const [error, setError] = useState(false);
+    const inputRef = useRef(null);
 
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    useEffect(() => { inputRef.current?.focus(); }, []);
 
-  function handleSubmit(e) {
-    e.preventDefault();
-    if (!onLogin(pw)) {
-      setError(true);
-      setPw("");
-      inputRef.current?.focus();
+    function handleSubmit(e) {
+        e.preventDefault();
+        if (!onLogin(pw)) {
+            setError(true);
+            setPw("");
+            inputRef.current?.focus();
+        }
     }
-  }
 
-  return (
-    <div className="gate-shell">
-      <form className="gate-card" onSubmit={handleSubmit}>
-        <h1 className="gate-title">Admin</h1>
-        <p className="gate-sub">Enter the password to continue.</p>
-        <input
-          ref={inputRef}
-          className={`gate-input ${error ? "gate-error" : ""}`}
-          type="password"
-          placeholder="Password"
-          value={pw}
-          onChange={(e) => {
-            setPw(e.target.value);
-            setError(false);
-          }}
-          autoComplete="current-password"
-        />
-        {error && (
-          <p className="gate-error-msg">
-            Wrong password. Try again.
-          </p>
-        )}
-        <button className="button button-primary gate-btn" type="submit">
-          Enter
-        </button>
-      </form>
+    return (
+        <div className="gate-shell">
+            <form className="gate-card" onSubmit={handleSubmit}>
+                <h1 className="gate-title">Admin</h1>
+                <p className="gate-sub">Enter the password to continue.</p>
+                <input
+                    ref={inputRef}
+                    className={`gate-input ${error ? "gate-error" : ""}`}
+                    type="password"
+                    placeholder="Password"
+                    value={pw}
+                    onChange={(e) => { setPw(e.target.value); setError(false); }}
+                    autoComplete="current-password"
+                />
+                {error && <p className="gate-error-msg">Wrong password. Try again.</p>}
+                <button className="button button-primary gate-btn" type="submit">Enter</button>
+            </form>
 
-      <style jsx>{`
+            <style jsx>{`
         .gate-shell {
           display: flex;
           align-items: center;
@@ -241,39 +218,31 @@ function PasswordGate({ onLogin }) {
           position: relative;
           z-index: 1;
         }
-
         .gate-card {
           display: grid;
           gap: var(--space-3);
-          width: min(380px, 100%);
+          width: min(360px, 100%);
           padding: var(--space-6);
-          border: 1px solid rgba(122, 103, 83, 0.14);
+          border: 1px solid var(--border);
           border-radius: var(--radius-lg);
           background: var(--panel-bg);
           box-shadow: var(--shadow);
-          backdrop-filter: blur(18px);
+          backdrop-filter: blur(16px);
           text-align: center;
         }
-
         .gate-title {
           margin: 0;
           font-family: var(--font-display);
-          font-size: 2.4rem;
+          font-size: 2.2rem;
           font-weight: 350;
           letter-spacing: -0.04em;
         }
-
-        .gate-sub {
-          margin: 0;
-          color: var(--muted);
-          font-size: 0.9375rem;
-        }
-
+        .gate-sub { margin: 0; color: var(--muted); font-size: 0.9375rem; }
         .gate-input {
           width: 100%;
-          padding: 14px 18px;
-          border: 1px solid rgba(122, 103, 83, 0.18);
-          border-radius: 14px;
+          padding: 12px 16px;
+          border: 1px solid var(--border);
+          border-radius: 12px;
           background: rgba(255, 255, 255, 0.5);
           font-family: var(--font-body);
           font-size: 1rem;
@@ -281,968 +250,1183 @@ function PasswordGate({ onLogin }) {
           outline: none;
           transition: border-color var(--transition);
         }
-
-        .gate-input:focus {
-          border-color: var(--accent);
-        }
-
-        .gate-input.gate-error {
-          border-color: #c0392b;
-        }
-
-        .gate-error-msg {
-          color: #c0392b;
-          font-size: 0.8125rem;
-          font-weight: 600;
-          margin: 0;
-        }
-
-        .gate-btn {
-          width: 100%;
-          justify-content: center;
-          margin-top: var(--space-1);
-        }
+        .gate-input:focus { border-color: var(--accent); }
+        .gate-input.gate-error { border-color: #c0392b; }
+        .gate-error-msg { color: #c0392b; font-size: 0.8125rem; font-weight: 600; margin: 0; }
+        .gate-btn { width: 100%; justify-content: center; }
       `}</style>
-    </div>
-  );
+        </div>
+    );
 }
 
 /* ═══════════════════════════════════════════════════════════
-   PHOTO MANAGER
+   SITE CONTENT MANAGER
    ═══════════════════════════════════════════════════════════ */
 
-function PhotoManager() {
-  const [photos, setPhotos] = useState([]);
-  const [uploading, setUploading] = useState([]);
-  const [dragOver, setDragOver] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [editCaption, setEditCaption] = useState("");
-  const fileInputRef = useRef(null);
+function SiteContentManager() {
+    const [data, setData] = useState(defaultSiteContent);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const timerRef = useRef(null);
 
-  useEffect(() => {
-    const q = query(
-      collection(db, "photos"),
-      orderBy("createdAt", "desc")
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      setPhotos(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsub();
-  }, []);
+    // Load from Firestore
+    useEffect(() => {
+        let unsub;
+        try {
+            unsub = onSnapshot(doc(db, "siteContent", "home"), (snap) => {
+                if (snap.exists()) {
+                    setData((prev) => ({ ...defaultSiteContent, ...snap.data() }));
+                }
+            });
+        } catch { /* keep defaults */ }
+        return () => unsub && unsub();
+    }, []);
 
-  function handleFiles(files) {
-    const images = Array.from(files).filter((f) =>
-      f.type.startsWith("image/")
-    );
-    images.forEach(uploadFile);
-  }
-
-  async function uploadFile(file) {
-    const id = Math.random().toString(36).slice(2);
-    const originalName = file.name.split('.')[0];
-    const webpName = `${Date.now()}_${originalName}.webp`;
-
-    setUploading((prev) => [...prev, { id, name: "Compressing...", progress: 0 }]);
-
-    let fileToUpload = file;
-    try {
-      const options = {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 2048,
-        useWebWorker: true,
-        fileType: "image/webp",
-        initialQuality: 0.85
-      };
-      fileToUpload = await imageCompression(file, options);
-    } catch (error) {
-      console.error("Compression fell back to original file:", error);
+    async function handleSave() {
+        setSaving(true);
+        try {
+            await setDoc(doc(db, "siteContent", "home"), data, { merge: true });
+            setSaved(true);
+            clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setSaved(false), 3000);
+        } catch (err) {
+            console.error("Save error:", err);
+            alert("Failed to save. Check console.");
+        }
+        setSaving(false);
     }
 
-    const storageRef = ref(storage, `photos/${webpName}`);
-    const task = uploadBytesResumable(storageRef, fileToUpload);
-
-    setUploading((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, name: webpName } : u))
-    );
-
-    task.on(
-      "state_changed",
-      (snap) => {
-        const progress = Math.round(
-          (snap.bytesTransferred / snap.totalBytes) * 100
-        );
-        setUploading((prev) =>
-          prev.map((u) => (u.id === id ? { ...u, progress } : u))
-        );
-      },
-      (err) => {
-        console.error("Upload error:", err);
-        setUploading((prev) => prev.filter((u) => u.id !== id));
-      },
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        // Get image dimensions for Next/Image 
-        const blobUrl = URL.createObjectURL(fileToUpload);
-        const img = new window.Image();
-        img.onload = async () => {
-          await addDoc(collection(db, "photos"), {
-            url,
-            caption: "",
-            tags: [],
-            width: img.naturalWidth,
-            height: img.naturalHeight,
-            storagePath: storageRef.fullPath,
-            createdAt: serverTimestamp(),
-          });
-          URL.revokeObjectURL(blobUrl);
-          setUploading((prev) => prev.filter((u) => u.id !== id));
-        };
-        img.src = blobUrl;
-      }
-    );
-  }
-
-  async function handleDelete(photo) {
-    if (!confirm("Delete this photo permanently?")) return;
-    try {
-      if (photo.storagePath) {
-        const storageRef = ref(storage, photo.storagePath);
-        await deleteObject(storageRef);
-      }
-      await deleteDoc(doc(db, "photos", photo.id));
-    } catch (err) {
-      console.error("Delete error:", err);
+    async function handleReset() {
+        if (!confirm("Reset all site content to defaults? This cannot be undone.")) return;
+        setSaving(true);
+        try {
+            await setDoc(doc(db, "siteContent", "home"), defaultSiteContent);
+            setData(defaultSiteContent);
+            setSaved(true);
+            clearTimeout(timerRef.current);
+            timerRef.current = setTimeout(() => setSaved(false), 3000);
+        } catch (err) {
+            console.error("Reset error:", err);
+        }
+        setSaving(false);
     }
-  }
 
-  async function handleCaptionSave(photo) {
-    await updateDoc(doc(db, "photos", photo.id), { caption: editCaption });
-    setEditingId(null);
-    setEditCaption("");
-  }
+    function update(path, value) {
+        setData((prev) => {
+            const copy = JSON.parse(JSON.stringify(prev));
+            const keys = path.split(".");
+            let obj = copy;
+            for (let i = 0; i < keys.length - 1; i++) {
+                const k = isNaN(keys[i]) ? keys[i] : Number(keys[i]);
+                obj = obj[k];
+            }
+            const lastKey = isNaN(keys[keys.length - 1]) ? keys[keys.length - 1] : Number(keys[keys.length - 1]);
+            obj[lastKey] = value;
+            return copy;
+        });
+    }
 
-  return (
-    <div className="pm">
-      {/* Drop zone */}
-      <div
-        className={`pm-dropzone ${dragOver ? "pm-dropzone-active" : ""}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          handleFiles(e.dataTransfer.files);
-        }}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <span className="pm-dropzone-icon">
-          {dragOver ? "↓" : "+"}
-        </span>
-        <p className="pm-dropzone-text">
-          {dragOver
-            ? "Drop to upload"
-            : "Drag photos here or click to browse"}
-        </p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          hidden
-          onChange={(e) => handleFiles(e.target.files)}
-        />
-      </div>
-
-      {/* Upload progress */}
-      {uploading.length > 0 && (
-        <div className="pm-uploads">
-          {uploading.map((u) => (
-            <div key={u.id} className="pm-upload-item">
-              <span className="pm-upload-name">{u.name}</span>
-              <div className="pm-progress-track">
-                <div
-                  className="pm-progress-fill"
-                  style={{ width: `${u.progress}%` }}
-                />
-              </div>
-              <span className="pm-upload-pct">{u.progress}%</span>
+    return (
+        <div className="scm">
+            <div className="scm-actions">
+                <button className="button button-primary" onClick={handleSave} disabled={saving}>
+                    {saving ? "Saving…" : saved ? "✓ Saved" : "Save Changes"}
+                </button>
+                <button className="button button-secondary" onClick={handleReset} disabled={saving}>
+                    Reset to Defaults
+                </button>
             </div>
-          ))}
-        </div>
-      )}
 
-      {/* Photo grid */}
-      <div className="pm-grid">
-        {photos.map((photo) => (
-          <div key={photo.id} className="pm-card">
-            <img src={photo.url} alt={photo.caption || ""} className="pm-img" />
-            <div className="pm-card-actions">
-              {editingId === photo.id ? (
-                <div className="pm-caption-edit">
-                  <input
-                    className="pm-caption-input"
-                    value={editCaption}
-                    onChange={(e) => setEditCaption(e.target.value)}
-                    placeholder="Add caption..."
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleCaptionSave(photo);
-                      if (e.key === "Escape") setEditingId(null);
-                    }}
-                  />
-                  <button
-                    className="pm-btn pm-btn-save"
-                    onClick={() => handleCaptionSave(photo)}
-                  >
-                    ✓
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <span className="pm-caption-text">
-                    {photo.caption || "No caption"}
-                  </span>
-                  <button
-                    className="pm-btn"
-                    onClick={() => {
-                      setEditingId(photo.id);
-                      setEditCaption(photo.caption || "");
-                    }}
-                    title="Edit caption"
-                  >
-                    ✎
-                  </button>
-                  <button
-                    className="pm-btn pm-btn-delete"
-                    onClick={() => handleDelete(photo)}
-                    title="Delete photo"
-                  >
-                    ×
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+            {/* HERO */}
+            <fieldset className="scm-group">
+                <legend>Hero / Statement</legend>
+                <label className="scm-toggle">
+                    <input
+                        type="checkbox"
+                        checked={data.sectionsVisible?.hero !== false}
+                        onChange={(e) => update("sectionsVisible.hero", e.target.checked)}
+                    />
+                    Visible
+                </label>
+                <Field label="Eyebrow" value={data.hero?.eyebrow} onChange={(v) => update("hero.eyebrow", v)} />
+                <Field label="Headline" value={data.hero?.headline} onChange={(v) => update("hero.headline", v)} textarea />
+                <Field label="Summary" value={data.hero?.summary} onChange={(v) => update("hero.summary", v)} textarea />
+                <Field label="Role" value={data.hero?.role} onChange={(v) => update("hero.role", v)} />
+                <Field label="Location" value={data.hero?.location} onChange={(v) => update("hero.location", v)} />
+                <p className="scm-sub-label">Proof Points</p>
+                {data.hero?.proofPoints?.map((p, i) => (
+                    <div key={i} className="scm-row">
+                        <Field label="Value" value={p.value} onChange={(v) => update(`hero.proofPoints.${i}.value`, v)} small />
+                        <Field label="Label" value={p.label} onChange={(v) => update(`hero.proofPoints.${i}.label`, v)} />
+                    </div>
+                ))}
+            </fieldset>
 
-      <style jsx>{`
-        .pm {
-          display: grid;
-          gap: var(--space-4);
-        }
+            {/* EXPERTISE */}
+            <fieldset className="scm-group">
+                <legend>Expertise</legend>
+                <label className="scm-toggle">
+                    <input
+                        type="checkbox"
+                        checked={data.sectionsVisible?.expertise !== false}
+                        onChange={(e) => update("sectionsVisible.expertise", e.target.checked)}
+                    />
+                    Visible
+                </label>
+                <Field label="Question" value={data.expertise?.question} onChange={(v) => update("expertise.question", v)} />
+                <Field label="Title" value={data.expertise?.title} onChange={(v) => update("expertise.title", v)} />
+                <Field label="Note" value={data.expertise?.note} onChange={(v) => update("expertise.note", v)} textarea />
+                {data.expertise?.cards?.map((card, ci) => (
+                    <div key={ci} className="scm-sub-group">
+                        <p className="scm-sub-label">{card.tag}</p>
+                        <Field label="Title" value={card.title} onChange={(v) => update(`expertise.cards.${ci}.title`, v)} />
+                        <Field label="Desc" value={card.desc} onChange={(v) => update(`expertise.cards.${ci}.desc`, v)} textarea />
+                    </div>
+                ))}
+            </fieldset>
 
-        .pm-dropzone {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: var(--space-2);
-          min-height: 180px;
-          border: 2px dashed rgba(122, 103, 83, 0.22);
-          border-radius: var(--radius-lg);
-          background: rgba(255, 255, 255, 0.3);
-          cursor: pointer;
-          transition: all var(--transition);
-        }
+            {/* CAREER */}
+            <fieldset className="scm-group">
+                <legend>Career</legend>
+                <label className="scm-toggle">
+                    <input
+                        type="checkbox"
+                        checked={data.sectionsVisible?.career !== false}
+                        onChange={(e) => update("sectionsVisible.career", e.target.checked)}
+                    />
+                    Visible
+                </label>
+                <Field label="Question" value={data.career?.question} onChange={(v) => update("career.question", v)} />
+                <Field label="Title" value={data.career?.title} onChange={(v) => update("career.title", v)} />
+            </fieldset>
 
-        .pm-dropzone:hover {
-          border-color: rgba(180, 93, 57, 0.3);
-          background: rgba(180, 93, 57, 0.04);
-        }
+            {/* TESTIMONIAL */}
+            <fieldset className="scm-group">
+                <legend>Testimonial</legend>
+                <label className="scm-toggle">
+                    <input
+                        type="checkbox"
+                        checked={data.sectionsVisible?.testimonial !== false}
+                        onChange={(e) => update("sectionsVisible.testimonial", e.target.checked)}
+                    />
+                    Visible
+                </label>
+                <Field label="Quote" value={data.testimonial?.quote} onChange={(v) => update("testimonial.quote", v)} textarea />
+                <Field label="Author" value={data.testimonial?.author} onChange={(v) => update("testimonial.author", v)} />
+                <Field label="Author Role" value={data.testimonial?.authorRole} onChange={(v) => update("testimonial.authorRole", v)} textarea />
+            </fieldset>
 
-        .pm-dropzone-active {
-          border-color: var(--accent) !important;
-          background: rgba(180, 93, 57, 0.08) !important;
-          transform: scale(1.01);
-        }
+            {/* EDUCATION */}
+            <fieldset className="scm-group">
+                <legend>Education</legend>
+                <label className="scm-toggle">
+                    <input
+                        type="checkbox"
+                        checked={data.sectionsVisible?.education !== false}
+                        onChange={(e) => update("sectionsVisible.education", e.target.checked)}
+                    />
+                    Visible
+                </label>
+                <Field label="Question" value={data.education?.question} onChange={(v) => update("education.question", v)} />
+                <Field label="Title" value={data.education?.title} onChange={(v) => update("education.title", v)} />
+            </fieldset>
 
-        .pm-dropzone-icon {
-          font-size: 2.4rem;
-          color: var(--accent);
-          line-height: 1;
-          font-weight: 300;
-        }
+            {/* CONTACT */}
+            <fieldset className="scm-group">
+                <legend>Contact</legend>
+                <label className="scm-toggle">
+                    <input
+                        type="checkbox"
+                        checked={data.sectionsVisible?.contact !== false}
+                        onChange={(e) => update("sectionsVisible.contact", e.target.checked)}
+                    />
+                    Visible
+                </label>
+                <Field label="Question" value={data.contact?.question} onChange={(v) => update("contact.question", v)} />
+                <Field label="Title" value={data.contact?.title} onChange={(v) => update("contact.title", v)} />
+                <Field label="Note" value={data.contact?.note} onChange={(v) => update("contact.note", v)} textarea />
+                <Field label="Body" value={data.contact?.body} onChange={(v) => update("contact.body", v)} textarea />
+                <Field label="CTA" value={data.contact?.cta} onChange={(v) => update("contact.cta", v)} />
+            </fieldset>
 
-        .pm-dropzone-text {
-          margin: 0;
-          color: var(--muted);
-          font-size: 0.9375rem;
-        }
-
-        .pm-uploads {
-          display: grid;
-          gap: var(--space-2);
-          padding: var(--space-3);
+            <style jsx>{`
+        .scm { display: grid; gap: var(--space-4); }
+        .scm-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+        .scm-group {
+          border: 1px solid var(--border);
           border-radius: var(--radius-md);
-          background: rgba(255, 255, 255, 0.5);
-          border: 1px solid rgba(122, 103, 83, 0.1);
-        }
-
-        .pm-upload-item {
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-        }
-
-        .pm-upload-name {
-          font-size: 0.8125rem;
-          color: var(--muted);
-          min-width: 100px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .pm-progress-track {
-          flex: 1;
-          height: 6px;
-          border-radius: 999px;
-          background: rgba(122, 103, 83, 0.1);
-          overflow: hidden;
-        }
-
-        .pm-progress-fill {
-          height: 100%;
-          background: linear-gradient(90deg, var(--accent), var(--accent-deep));
-          border-radius: 999px;
-          transition: width 200ms ease;
-        }
-
-        .pm-upload-pct {
-          font-size: 0.75rem;
-          color: var(--accent);
-          font-weight: 700;
-          min-width: 36px;
-          text-align: right;
-        }
-
-        .pm-grid {
+          padding: var(--space-4);
+          background: rgba(255, 255, 255, 0.4);
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
           gap: var(--space-3);
         }
-
-        .pm-card {
-          border-radius: var(--radius-md);
-          overflow: hidden;
-          border: 1px solid rgba(122, 103, 83, 0.12);
-          background: var(--surface-solid);
-          box-shadow: var(--shadow-soft);
+        .scm-group legend {
+          font-family: var(--font-display);
+          font-size: 1.2rem;
+          font-weight: 400;
+          letter-spacing: -0.01em;
+          padding: 0 8px;
         }
-
-        .pm-img {
-          display: block;
-          width: 100%;
-          aspect-ratio: 4 / 3;
-          object-fit: cover;
-        }
-
-        .pm-card-actions {
+        .scm-toggle {
           display: flex;
           align-items: center;
-          gap: var(--space-1);
-          padding: var(--space-2);
-        }
-
-        .pm-caption-text {
-          flex: 1;
+          gap: 8px;
           font-size: 0.8125rem;
+          font-weight: 600;
           color: var(--muted);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-
-        .pm-caption-edit {
-          display: flex;
-          gap: 4px;
-          flex: 1;
-        }
-
-        .pm-caption-input {
-          flex: 1;
-          padding: 6px 10px;
-          border: 1px solid rgba(122, 103, 83, 0.2);
-          border-radius: 8px;
-          background: rgba(255, 255, 255, 0.6);
-          font-family: var(--font-body);
-          font-size: 0.8125rem;
-          outline: none;
-        }
-
-        .pm-caption-input:focus {
-          border-color: var(--accent);
-        }
-
-        .pm-btn {
-          flex-shrink: 0;
-          width: 30px;
-          height: 30px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid rgba(122, 103, 83, 0.12);
-          border-radius: 8px;
-          background: transparent;
-          color: var(--muted);
-          font-size: 0.875rem;
           cursor: pointer;
-          transition: all var(--transition);
         }
-
-        .pm-btn:hover {
-          background: rgba(180, 93, 57, 0.08);
+        .scm-toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+        .scm-sub-label {
+          margin: 0;
+          font-size: 0.75rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
           color: var(--accent);
-          border-color: rgba(180, 93, 57, 0.2);
         }
-
-        .pm-btn-save {
-          color: #27ae60;
-          border-color: rgba(39, 174, 96, 0.2);
-        }
-
-        .pm-btn-save:hover {
-          background: rgba(39, 174, 96, 0.08);
-          color: #27ae60;
-        }
-
-        .pm-btn-delete:hover {
-          background: rgba(192, 57, 43, 0.08);
-          color: #c0392b;
-          border-color: rgba(192, 57, 43, 0.2);
-        }
-
-        @media (max-width: 560px) {
-          .pm-grid {
-            grid-template-columns: 1fr;
-          }
+        .scm-row { display: flex; gap: var(--space-2); align-items: end; }
+        .scm-sub-group {
+          display: grid;
+          gap: var(--space-2);
+          padding: var(--space-2);
+          border-left: 2px solid rgba(180, 93, 57, 0.12);
         }
       `}</style>
-    </div>
-  );
+        </div>
+    );
 }
 
 /* ═══════════════════════════════════════════════════════════
-   BLOG MANAGER
+   FIELD COMPONENT
    ═══════════════════════════════════════════════════════════ */
 
-const DRAFT_STORAGE_KEY = "portfolio_blog_draft";
+function Field({ label, value, onChange, textarea, small }) {
+    const Tag = textarea ? "textarea" : "input";
+    return (
+        <label className="field">
+            <span className="field-label">{label}</span>
+            <Tag
+                className={`field-input ${small ? "field-small" : ""}`}
+                value={value || ""}
+                onChange={(e) => onChange(e.target.value)}
+                rows={textarea ? 3 : undefined}
+            />
+            <style jsx>{`
+        .field { display: grid; gap: 4px; }
+        .field-label {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--muted);
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+        }
+        .field-input {
+          width: 100%;
+          padding: 10px 14px;
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.5);
+          font-family: var(--font-body);
+          font-size: 0.9375rem;
+          color: var(--text);
+          outline: none;
+          resize: vertical;
+          transition: border-color var(--transition);
+        }
+        .field-input:focus { border-color: var(--accent); }
+        .field-small { max-width: 120px; }
+      `}</style>
+        </label>
+    );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BLOG MANAGER (with AI Writing Assistant)
+   ═══════════════════════════════════════════════════════════ */
 
 function BlogManager() {
-  const [posts, setPosts] = useState([]);
-  const [mode, setMode] = useState("list"); // list | edit
-  const [editPost, setEditPost] = useState(null);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [tags, setTags] = useState("");
-  const [status, setStatus] = useState("draft");
-  const [saving, setSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState(null);
-  const saveTimerRef = useRef(null);
+    const [posts, setPosts] = useState([]);
+    const [mode, setMode] = useState("list");
+    const [editPost, setEditPost] = useState(null);
+    const [title, setTitle] = useState("");
+    const [body, setBody] = useState("");
+    const [tags, setTags] = useState("");
+    const [status, setStatus] = useState("draft");
+    const [saving, setSaving] = useState(false);
+    const [lastSaved, setLastSaved] = useState(null);
+    const [aiOpen, setAiOpen] = useState(false);
+    const saveTimerRef = useRef(null);
 
-  // Load posts
-  useEffect(() => {
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
-    return () => unsub();
-  }, []);
+    useEffect(() => {
+        const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
+        const unsub = onSnapshot(q, (snap) => {
+            setPosts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        });
+        return () => unsub();
+    }, []);
 
-  // Auto-save draft to localStorage every 3 seconds
-  useEffect(() => {
-    if (mode !== "edit") return;
-    clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      const draft = { title, body, tags, status, editId: editPost?.id || null };
-      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
-      setLastSaved(new Date());
-    }, 3000);
-    return () => clearTimeout(saveTimerRef.current);
-  }, [title, body, tags, status, mode, editPost]);
+    // Auto-save draft
+    useEffect(() => {
+        if (mode !== "edit") return;
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => {
+            const draft = { title, body, tags, status, editId: editPost?.id || null };
+            localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+            setLastSaved(new Date());
+        }, 2000);
+        return () => clearTimeout(saveTimerRef.current);
+    }, [title, body, tags, status, mode, editPost]);
 
-  // Recover draft on mount
-  useEffect(() => {
-    const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (saved) {
-      try {
-        const draft = JSON.parse(saved);
-        if (draft.title || draft.body) {
-          setTitle(draft.title || "");
-          setBody(draft.body || "");
-          setTags(draft.tags || "");
-          setStatus(draft.status || "draft");
-          if (draft.editId) {
-            setEditPost({ id: draft.editId });
-          }
-          setMode("edit");
+    // Recover draft
+    useEffect(() => {
+        const saved = localStorage.getItem(DRAFT_KEY);
+        if (saved) {
+            try {
+                const draft = JSON.parse(saved);
+                if (draft.title || draft.body) {
+                    setTitle(draft.title || "");
+                    setBody(draft.body || "");
+                    setTags(draft.tags || "");
+                    setStatus(draft.status || "draft");
+                    if (draft.editId) setEditPost({ id: draft.editId });
+                    setMode("edit");
+                }
+            } catch { /* ignore */ }
         }
-      } catch {
-        // ignore
-      }
+    }, []);
+
+    function slugify(text) {
+        return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
     }
-  }, []);
 
-  function slugify(text) {
-    return text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 80);
-  }
-
-  function startNew() {
-    setEditPost(null);
-    setTitle("");
-    setBody("");
-    setTags("");
-    setStatus("draft");
-    setMode("edit");
-    localStorage.removeItem(DRAFT_STORAGE_KEY);
-  }
-
-  function startEdit(post) {
-    setEditPost(post);
-    setTitle(post.title || "");
-    setBody(post.body || "");
-    setTags((post.tags || []).join(", "));
-    setStatus(post.status || "draft");
-    setMode("edit");
-  }
-
-  function cancelEdit() {
-    setMode("list");
-    setEditPost(null);
-    setTitle("");
-    setBody("");
-    setTags("");
-    setStatus("draft");
-    localStorage.removeItem(DRAFT_STORAGE_KEY);
-  }
-
-  async function handleSave() {
-    if (!title.trim()) return;
-    setSaving(true);
-
-    const tagArr = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-    const slug = slugify(title);
-    const excerpt = body.replace(/<[^>]+>/g, "").slice(0, 200);
-
-    const data = {
-      title: title.trim(),
-      slug,
-      body,
-      excerpt,
-      tags: tagArr,
-      status,
-      updatedAt: serverTimestamp(),
-    };
-
-    try {
-      if (editPost?.id) {
-        await updateDoc(doc(db, "posts", editPost.id), data);
-      } else {
-        data.createdAt = serverTimestamp();
-        await addDoc(collection(db, "posts"), data);
-      }
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
-      cancelEdit();
-    } catch (err) {
-      console.error("Save error:", err);
-      alert("Save failed. Your draft is safe in local storage.");
+    function startNew() {
+        setEditPost(null);
+        setTitle("");
+        setBody("");
+        setTags("");
+        setStatus("draft");
+        setAiOpen(false);
+        localStorage.removeItem(DRAFT_KEY);
+        setMode("edit");
     }
-    setSaving(false);
-  }
 
-  async function handleDelete(post) {
-    if (!confirm(`Delete "${post.title}" permanently?`)) return;
-    try {
-      await deleteDoc(doc(db, "posts", post.id));
-    } catch (err) {
-      console.error("Delete error:", err);
+    function startEdit(post) {
+        setEditPost(post);
+        setTitle(post.title || "");
+        setBody(post.body || "");
+        setTags((post.tags || []).join(", "));
+        setStatus(post.status || "draft");
+        setAiOpen(false);
+        setMode("edit");
     }
-  }
 
-  function formatDate(ts) {
-    if (!ts) return "—";
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
-    return d.toLocaleDateString("en-IN", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  }
+    function cancelEdit() {
+        setMode("list");
+        setAiOpen(false);
+        localStorage.removeItem(DRAFT_KEY);
+        setLastSaved(null);
+    }
 
-  if (mode === "edit") {
-    return (
-      <div className="be">
-        <div className="be-toolbar">
-          <button className="pm-btn" onClick={cancelEdit} title="Go back">
-            ←
-          </button>
-          <span className="be-toolbar-title">
-            {editPost ? "Edit Post" : "New Post"}
-          </span>
-          {lastSaved && (
-            <span className="be-autosave">
-              Draft saved {lastSaved.toLocaleTimeString()}
-            </span>
-          )}
-          <div className="be-toolbar-right">
-            <select
-              className="be-status-select"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              <option value="draft">Draft</option>
-              <option value="published">Published</option>
-            </select>
-            <button
-              className="button button-primary be-save-btn"
-              onClick={handleSave}
-              disabled={saving || !title.trim()}
-            >
-              {saving ? "Saving…" : status === "published" ? "Publish" : "Save Draft"}
-            </button>
-          </div>
-        </div>
+    async function handleSave() {
+        if (!title.trim()) return alert("Title is required.");
+        setSaving(true);
+        const tagArr = tags.split(",").map((t) => t.trim()).filter(Boolean);
+        const postData = {
+            title: title.trim(),
+            body,
+            tags: tagArr,
+            status,
+            slug: slugify(title),
+            updatedAt: serverTimestamp(),
+        };
 
-        <input
-          className="be-title-input"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Post title..."
-          autoFocus
-        />
+        try {
+            if (editPost?.id) {
+                await updateDoc(doc(db, "posts", editPost.id), postData);
+            } else {
+                postData.createdAt = serverTimestamp();
+                await addDoc(collection(db, "posts"), postData);
+            }
+            localStorage.removeItem(DRAFT_KEY);
+            setMode("list");
+            setAiOpen(false);
+        } catch (err) {
+            console.error("Save error:", err);
+            alert("Failed to save.");
+        }
+        setSaving(false);
+    }
 
-        <input
-          className="be-tags-input"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-          placeholder="Tags (comma separated)..."
-        />
+    async function handleDelete(postId) {
+        if (!confirm("Delete this post permanently?")) return;
+        try {
+            await deleteDoc(doc(db, "posts", postId));
+        } catch (err) {
+            console.error("Delete error:", err);
+        }
+    }
 
-        <div className="be-editor-area">
-          <div className="be-edit-col">
-            <label className="be-label">Write (HTML supported)</label>
-            <textarea
-              className="be-textarea"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="<p>Start writing...</p>"
-              spellCheck
-            />
-          </div>
-          <div className="be-preview-col">
-            <label className="be-label">Preview</label>
-            <div
-              className="be-preview post-body"
-              dangerouslySetInnerHTML={{ __html: body }}
-            />
-          </div>
-        </div>
+    if (mode === "edit") {
+        return (
+            <div className={`bm-workspace ${aiOpen ? "ai-panel-open" : ""}`}>
+                <div className="bm-editor">
+                    <div className="bm-editor-top">
+                        <button className="button button-secondary" onClick={cancelEdit}>← Back</button>
+                        <div className="bm-editor-actions">
+                            <button
+                                className={`bm-ai-trigger ${aiOpen ? "active" : ""}`}
+                                onClick={() => setAiOpen(!aiOpen)}
+                                title="AI Writing Assistant"
+                            >
+                                <span className="bm-ai-sparkle">✦</span>
+                                {aiOpen ? "Close AI" : "Write with AI"}
+                            </button>
+                            <select
+                                className="bm-status-select"
+                                value={status}
+                                onChange={(e) => setStatus(e.target.value)}
+                            >
+                                <option value="draft">Draft</option>
+                                <option value="published">Published</option>
+                            </select>
+                            <button className="button button-primary" onClick={handleSave} disabled={saving}>
+                                {saving ? "Saving…" : "Save"}
+                            </button>
+                        </div>
+                    </div>
 
-        <style jsx>{`
-          .be {
+                    {lastSaved && (
+                        <p className="bm-autosave">
+                            Draft auto-saved {lastSaved.toLocaleTimeString()}
+                        </p>
+                    )}
+
+                    <input
+                        className="bm-title-input"
+                        placeholder="Post title"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                    />
+                    <input
+                        className="bm-tags-input"
+                        placeholder="Tags (comma-separated)"
+                        value={tags}
+                        onChange={(e) => setTags(e.target.value)}
+                    />
+                    <textarea
+                        className="bm-body-input"
+                        placeholder="Write your post (HTML supported)…"
+                        value={body}
+                        onChange={(e) => setBody(e.target.value)}
+                        rows={20}
+                    />
+                </div>
+
+                {aiOpen && (
+                    <AIChatPanel
+                        title={title}
+                        body={body}
+                        tags={tags}
+                        onInsert={(text) => setBody((prev) => prev + "\n" + text)}
+                        onReplace={(text) => setBody(text)}
+                        onClose={() => setAiOpen(false)}
+                    />
+                )}
+
+                <style jsx>{`
+          .bm-workspace {
             display: grid;
             gap: var(--space-3);
+            transition: all var(--transition);
           }
-
-          .be-toolbar {
-            display: flex;
+          .bm-workspace.ai-panel-open {
+            grid-template-columns: 1fr 420px;
+            gap: var(--space-4);
+          }
+          .bm-editor { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
+          .bm-editor-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+          .bm-editor-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+          .bm-autosave { margin: 0; font-size: 0.75rem; color: var(--tertiary); }
+          .bm-ai-trigger {
+            display: inline-flex;
             align-items: center;
-            gap: var(--space-2);
-            flex-wrap: wrap;
-          }
-
-          .be-toolbar-title {
-            font-weight: 600;
-            font-size: 0.9375rem;
-          }
-
-          .be-autosave {
-            font-size: 0.75rem;
-            color: var(--tertiary);
-            font-style: italic;
-          }
-
-          .be-toolbar-right {
-            margin-left: auto;
-            display: flex;
-            gap: var(--space-2);
-            align-items: center;
-          }
-
-          .be-status-select {
-            padding: 8px 14px;
-            border: 1px solid rgba(122, 103, 83, 0.18);
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.5);
+            gap: 6px;
+            padding: 9px 16px;
+            border: 1px solid rgba(180, 93, 57, 0.2);
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(180, 93, 57, 0.06), rgba(180, 93, 57, 0.12));
+            color: var(--accent);
             font-family: var(--font-body);
             font-size: 0.8125rem;
-            font-weight: 600;
-            color: var(--text);
+            font-weight: 700;
             cursor: pointer;
+            transition: all var(--transition);
           }
-
-          .be-save-btn {
-            min-height: 40px;
-            padding: 0 20px;
-            font-size: 0.8125rem;
+          .bm-ai-trigger:hover {
+            background: linear-gradient(135deg, rgba(180, 93, 57, 0.12), rgba(180, 93, 57, 0.2));
+            border-color: rgba(180, 93, 57, 0.36);
+            transform: translateY(-1px);
           }
-
-          .be-save-btn:disabled {
-            opacity: 0.5;
-            pointer-events: none;
-          }
-
-          .be-title-input {
-            width: 100%;
-            padding: 16px 0;
-            border: none;
-            border-bottom: 2px solid rgba(122, 103, 83, 0.12);
-            background: transparent;
-            font-family: var(--font-display);
-            font-size: clamp(1.6rem, 3vw, 2.4rem);
-            font-weight: 350;
-            letter-spacing: -0.03em;
-            color: var(--text);
-            outline: none;
-            transition: border-color var(--transition);
-          }
-
-          .be-title-input:focus {
+          .bm-ai-trigger.active {
+            background: var(--accent);
             border-color: var(--accent);
+            color: white;
           }
-
-          .be-tags-input {
-            width: 100%;
-            padding: 10px 0;
-            border: none;
-            border-bottom: 1px solid rgba(122, 103, 83, 0.1);
-            background: transparent;
+          .bm-ai-sparkle {
+            font-size: 0.9rem;
+            line-height: 1;
+          }
+          .bm-status-select {
+            padding: 8px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.5);
             font-family: var(--font-body);
             font-size: 0.875rem;
-            color: var(--muted);
-            outline: none;
-          }
-
-          .be-tags-input:focus {
-            border-color: var(--accent);
-          }
-
-          .be-editor-area {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--space-3);
-            min-height: 500px;
-          }
-
-          .be-label {
-            display: block;
-            font-size: 0.75rem;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            color: var(--muted);
-            margin-bottom: var(--space-1);
-          }
-
-          .be-textarea {
-            width: 100%;
-            min-height: 460px;
-            padding: var(--space-3);
-            border: 1px solid rgba(122, 103, 83, 0.16);
-            border-radius: var(--radius-sm);
-            background: rgba(255, 255, 255, 0.5);
-            font-family: var(--font-body);
-            font-size: 0.9375rem;
-            line-height: 1.7;
             color: var(--text);
-            resize: vertical;
+          }
+          .bm-title-input, .bm-tags-input, .bm-body-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: rgba(255,255,255,0.5);
+            font-family: var(--font-body);
+            font-size: 1rem;
+            color: var(--text);
             outline: none;
             transition: border-color var(--transition);
           }
-
-          .be-textarea:focus {
-            border-color: var(--accent);
+          .bm-title-input:focus, .bm-tags-input:focus, .bm-body-input:focus { border-color: var(--accent); }
+          .bm-title-input {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-weight: 350;
           }
-
-          .be-preview {
-            padding: var(--space-3);
-            border: 1px solid rgba(122, 103, 83, 0.1);
-            border-radius: var(--radius-sm);
-            background: rgba(255, 255, 255, 0.3);
-            min-height: 460px;
-            overflow-y: auto;
-          }
-
-          @media (max-width: 720px) {
-            .be-editor-area {
+          .bm-tags-input { font-size: 0.875rem; }
+          .bm-body-input { resize: vertical; min-height: 300px; line-height: 1.7; }
+          @media (max-width: 920px) {
+            .bm-workspace.ai-panel-open {
               grid-template-columns: 1fr;
             }
           }
         `}</style>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bl">
-      <div className="bl-header">
-        <button className="button button-primary" onClick={startNew}>
-          + New Post
-        </button>
-      </div>
-
-      {posts.length === 0 ? (
-        <div className="bl-empty">
-          <p>No blog posts yet. Click &ldquo;New Post&rdquo; to write one.</p>
-        </div>
-      ) : (
-        <div className="bl-list">
-          {posts.map((post) => (
-            <div key={post.id} className="bl-card">
-              <div className="bl-card-info">
-                <span
-                  className={`bl-status ${post.status === "published" ? "bl-published" : "bl-draft"
-                    }`}
-                >
-                  {post.status}
-                </span>
-                <h3 className="bl-card-title">{post.title}</h3>
-                <span className="bl-card-date">
-                  {formatDate(post.createdAt)}
-                </span>
-              </div>
-              <div className="bl-card-actions">
-                <button
-                  className="pm-btn"
-                  onClick={() => startEdit(post)}
-                  title="Edit"
-                >
-                  ✎
-                </button>
-                <button
-                  className="pm-btn pm-btn-delete"
-                  onClick={() => handleDelete(post)}
-                  title="Delete"
-                >
-                  ×
-                </button>
-              </div>
             </div>
-          ))}
-        </div>
-      )}
+        );
+    }
 
-      <style jsx>{`
-        .bl {
-          display: grid;
-          gap: var(--space-4);
-        }
+    return (
+        <div className="bm">
+            <button className="button button-primary" onClick={startNew}>+ New Post</button>
 
-        .bl-header {
+            <div className="bm-list">
+                {posts.length === 0 && (
+                    <p className="bm-empty">No posts yet. Create your first entry.</p>
+                )}
+                {posts.map((post) => (
+                    <div key={post.id} className="bm-post">
+                        <div className="bm-post-info">
+                            <span className={`bm-badge ${post.status === "published" ? "bm-badge--pub" : ""}`}>
+                                {post.status || "draft"}
+                            </span>
+                            <h3 className="bm-post-title">{post.title}</h3>
+                        </div>
+                        <div className="bm-post-actions">
+                            <button className="bm-act" onClick={() => startEdit(post)}>Edit</button>
+                            <button className="bm-act bm-act--del" onClick={() => handleDelete(post.id)}>Delete</button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <style jsx>{`
+        .bm { display: grid; gap: var(--space-4); }
+        .bm-list { display: grid; gap: var(--space-2); }
+        .bm-empty { color: var(--muted); font-size: 0.9375rem; margin: 0; }
+        .bm-post {
           display: flex;
-          justify-content: flex-end;
-        }
-
-        .bl-empty {
-          text-align: center;
-          padding: var(--space-8) var(--space-4);
-          color: var(--muted);
-        }
-
-        .bl-list {
-          display: grid;
-          gap: var(--space-2);
-        }
-
-        .bl-card {
-          display: flex;
+          justify-content: space-between;
           align-items: center;
           gap: var(--space-3);
           padding: var(--space-3);
-          border: 1px solid rgba(122, 103, 83, 0.12);
+          border: 1px solid var(--border);
           border-radius: var(--radius-sm);
-          background: rgba(255, 255, 255, 0.5);
-          transition: transform var(--transition), box-shadow var(--transition);
+          background: rgba(255,255,255,0.4);
         }
-
-        .bl-card:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-soft);
-        }
-
-        .bl-card-info {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          gap: var(--space-2);
-          min-width: 0;
-        }
-
-        .bl-status {
+        .bm-post-info { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+        .bm-badge {
           flex-shrink: 0;
           padding: 4px 10px;
           border-radius: 999px;
+          background: rgba(122,103,83,0.1);
           font-size: 0.6875rem;
           font-weight: 700;
           text-transform: uppercase;
           letter-spacing: 0.06em;
+          color: var(--muted);
         }
-
-        .bl-published {
-          background: rgba(39, 174, 96, 0.12);
-          color: #27ae60;
-        }
-
-        .bl-draft {
-          background: rgba(180, 93, 57, 0.1);
-          color: var(--accent);
-        }
-
-        .bl-card-title {
+        .bm-badge--pub { background: rgba(180,93,57,0.1); color: var(--accent); }
+        .bm-post-title {
           margin: 0;
           font-size: 1rem;
-          font-weight: 600;
+          font-weight: 500;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          flex: 1;
-          min-width: 0;
         }
-
-        .bl-card-date {
-          flex-shrink: 0;
+        .bm-post-actions { display: flex; gap: 8px; flex-shrink: 0; }
+        .bm-act {
+          padding: 6px 14px;
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          background: transparent;
+          font-family: var(--font-body);
           font-size: 0.8125rem;
-          color: var(--tertiary);
+          font-weight: 600;
+          color: var(--muted);
+          cursor: pointer;
+          transition: all var(--transition);
+        }
+        .bm-act:hover { border-color: rgba(180,93,57,0.24); color: var(--accent); }
+        .bm-act--del:hover { border-color: rgba(192,57,43,0.24); color: #c0392b; }
+      `}</style>
+        </div>
+    );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AI CHAT PANEL
+   ═══════════════════════════════════════════════════════════ */
+
+const AI_SUGGESTIONS = [
+    "Write a full blog post about this topic",
+    "Give me 5 blog post ideas for my niche",
+    "Rewrite the current post to be more engaging",
+    "Add a compelling introduction",
+    "Summarize the current post in 2 paragraphs",
+];
+
+function AIChatPanel({ title, body, tags, onInsert, onReplace, onClose }) {
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const scrollRef = useRef(null);
+    const inputRef = useRef(null);
+
+    // Auto-scroll to bottom
+    useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+    }, [messages, loading]);
+
+    // Focus input on mount
+    useEffect(() => {
+        setTimeout(() => inputRef.current?.focus(), 200);
+    }, []);
+
+    async function sendMessage(text) {
+        if (!text.trim() || loading) return;
+        setError(null);
+
+        const userMsg = { role: "user", text: text.trim() };
+        const newMessages = [...messages, userMsg];
+        setMessages(newMessages);
+        setInput("");
+        setLoading(true);
+
+        try {
+            const res = await fetch("/api/ai", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    messages: newMessages,
+                    context: { title, body, tags },
+                }),
+            });
+
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || `Error ${res.status}`);
+            }
+
+            const data = await res.json();
+            const aiMsg = { role: "model", text: data.text || "I wasn't able to generate a response. Try again?" };
+            setMessages([...newMessages, aiMsg]);
+        } catch (err) {
+            console.error("AI error:", err);
+            setError(err.message || "Something went wrong. Try again.");
+        }
+        setLoading(false);
+    }
+
+    function handleKeyDown(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage(input);
+        }
+    }
+
+    function handleSuggestion(suggestion) {
+        sendMessage(suggestion);
+    }
+
+    function clearChat() {
+        setMessages([]);
+        setError(null);
+        inputRef.current?.focus();
+    }
+
+    const hasConversation = messages.length > 0;
+
+    return (
+        <div className="ai-panel">
+            {/* Panel Header */}
+            <div className="ai-header">
+                <div className="ai-header-left">
+                    <span className="ai-header-sparkle">✦</span>
+                    <h3 className="ai-header-title">AI Assistant</h3>
+                </div>
+                <div className="ai-header-actions">
+                    {hasConversation && (
+                        <button className="ai-clear" onClick={clearChat} title="New conversation">
+                            ↻
+                        </button>
+                    )}
+                    <button className="ai-close" onClick={onClose} title="Close panel">
+                        ✕
+                    </button>
+                </div>
+            </div>
+
+            {/* Messages */}
+            <div className="ai-messages" ref={scrollRef}>
+                {!hasConversation && !loading && (
+                    <div className="ai-welcome">
+                        <p className="ai-welcome-text">
+                            I can help you write, refine, or brainstorm your blog post.
+                            Try one of these or ask anything:
+                        </p>
+                        <div className="ai-suggestions">
+                            {AI_SUGGESTIONS.map((s, i) => (
+                                <button
+                                    key={i}
+                                    className="ai-suggestion"
+                                    onClick={() => handleSuggestion(s)}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {messages.map((msg, i) => (
+                    <div key={i} className={`ai-msg ai-msg--${msg.role}`}>
+                        <div className="ai-msg-marker">
+                            {msg.role === "user" ? "You" : "✦ AI"}
+                        </div>
+                        {msg.role === "model" ? (
+                            <>
+                                <div
+                                    className="ai-msg-content ai-msg-html"
+                                    dangerouslySetInnerHTML={{ __html: msg.text }}
+                                />
+                                <div className="ai-msg-actions">
+                                    <button
+                                        className="ai-action"
+                                        onClick={() => onReplace(msg.text)}
+                                        title="Replace the entire post body with this content"
+                                    >
+                                        ↳ Use as post
+                                    </button>
+                                    <button
+                                        className="ai-action"
+                                        onClick={() => onInsert(msg.text)}
+                                        title="Append this content to the end of your post"
+                                    >
+                                        + Insert at end
+                                    </button>
+                                    <button
+                                        className="ai-action"
+                                        onClick={() => { navigator.clipboard.writeText(msg.text); }}
+                                        title="Copy raw HTML to clipboard"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="ai-msg-content">{msg.text}</div>
+                        )}
+                    </div>
+                ))}
+
+                {loading && (
+                    <div className="ai-msg ai-msg--model">
+                        <div className="ai-msg-marker">✦ AI</div>
+                        <div className="ai-msg-content">
+                            <div className="ai-typing">
+                                <span /><span /><span />
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {error && (
+                    <div className="ai-error">
+                        <span>⚠</span> {error}
+                        <button className="ai-retry" onClick={() => {
+                            const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+                            if (lastUserMsg) {
+                                setMessages(messages.slice(0, -0)); // keep all
+                                sendMessage(lastUserMsg.text);
+                            }
+                        }}>
+                            Retry
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Input */}
+            <div className="ai-input-area">
+                <textarea
+                    ref={inputRef}
+                    className="ai-input"
+                    placeholder="Ask AI to write, refine, or brainstorm…"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    rows={2}
+                    disabled={loading}
+                />
+                <button
+                    className="ai-send"
+                    onClick={() => sendMessage(input)}
+                    disabled={!input.trim() || loading}
+                    title="Send message"
+                >
+                    ↑
+                </button>
+            </div>
+
+            <style jsx>{`
+        .ai-panel {
+          display: flex;
+          flex-direction: column;
+          height: calc(100vh - 160px);
+          max-height: 820px;
+          position: sticky;
+          top: 100px;
+          border: 1px solid rgba(180, 93, 57, 0.16);
+          border-radius: var(--radius-lg);
+          background: linear-gradient(180deg, rgba(255, 252, 247, 0.95), rgba(249, 242, 233, 0.92));
+          box-shadow: 0 24px 64px rgba(64, 44, 31, 0.12);
+          backdrop-filter: blur(20px);
+          overflow: hidden;
+          animation: ai-slide-in 320ms cubic-bezier(0.19, 1, 0.22, 1) both;
+        }
+        @keyframes ai-slide-in {
+          from { opacity: 0; transform: translateX(24px) scale(0.97); }
+          to { opacity: 1; transform: translateX(0) scale(1); }
         }
 
-        .bl-card-actions {
+        /* Header */
+        .ai-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px 20px;
+          border-bottom: 1px solid rgba(122, 103, 83, 0.08);
+          flex-shrink: 0;
+        }
+        .ai-header-left {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .ai-header-sparkle {
+          color: var(--accent);
+          font-size: 1.1rem;
+        }
+        .ai-header-title {
+          margin: 0;
+          font-family: var(--font-display);
+          font-size: 1.05rem;
+          font-weight: 400;
+          letter-spacing: -0.01em;
+        }
+        .ai-header-actions {
           display: flex;
           gap: 4px;
-          flex-shrink: 0;
+        }
+        .ai-clear, .ai-close {
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: none;
+          border-radius: 8px;
+          background: transparent;
+          color: var(--muted);
+          font-size: 1rem;
+          cursor: pointer;
+          transition: all var(--transition);
+        }
+        .ai-clear:hover, .ai-close:hover {
+          background: rgba(122, 103, 83, 0.08);
+          color: var(--text);
         }
 
-        @media (max-width: 560px) {
-          .bl-card-info {
-            flex-wrap: wrap;
-          }
-          .bl-card-date {
-            width: 100%;
-            order: -1;
-            font-size: 0.75rem;
+        /* Messages */
+        .ai-messages {
+          flex: 1;
+          overflow-y: auto;
+          padding: 16px 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(180, 93, 57, 0.2) transparent;
+        }
+
+        /* Welcome */
+        .ai-welcome {
+          display: grid;
+          gap: 16px;
+        }
+        .ai-welcome-text {
+          margin: 0;
+          font-size: 0.9375rem;
+          color: var(--muted);
+          line-height: 1.6;
+        }
+        .ai-suggestions {
+          display: grid;
+          gap: 6px;
+        }
+        .ai-suggestion {
+          display: block;
+          width: 100%;
+          text-align: left;
+          padding: 11px 14px;
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.4);
+          color: var(--text);
+          font-family: var(--font-body);
+          font-size: 0.8125rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all var(--transition);
+          line-height: 1.3;
+        }
+        .ai-suggestion:hover {
+          background: rgba(180, 93, 57, 0.06);
+          border-color: rgba(180, 93, 57, 0.16);
+          transform: translateX(4px);
+        }
+
+        /* Message bubbles */
+        .ai-msg {
+          display: grid;
+          gap: 8px;
+        }
+        .ai-msg-marker {
+          font-size: 0.6875rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--tertiary);
+        }
+        .ai-msg--model .ai-msg-marker {
+          color: var(--accent);
+        }
+        .ai-msg-content {
+          font-size: 0.9375rem;
+          line-height: 1.65;
+          color: var(--text);
+        }
+        .ai-msg--user .ai-msg-content {
+          padding: 12px 16px;
+          border-radius: 16px 16px 4px 16px;
+          background: var(--primary);
+          color: var(--surface-solid);
+        }
+
+        /* AI response actions */
+        .ai-msg-actions {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .ai-action {
+          padding: 6px 12px;
+          border: 1px solid rgba(180, 93, 57, 0.16);
+          border-radius: 8px;
+          background: rgba(180, 93, 57, 0.04);
+          color: var(--accent);
+          font-family: var(--font-body);
+          font-size: 0.75rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all var(--transition);
+        }
+        .ai-action:hover {
+          background: rgba(180, 93, 57, 0.12);
+          border-color: rgba(180, 93, 57, 0.28);
+          transform: translateY(-1px);
+        }
+
+        /* Typing indicator */
+        .ai-typing {
+          display: flex;
+          gap: 4px;
+          padding: 4px 0;
+        }
+        .ai-typing span {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--accent);
+          opacity: 0.4;
+          animation: ai-dot 1.2s ease-in-out infinite;
+        }
+        .ai-typing span:nth-child(2) { animation-delay: 0.2s; }
+        .ai-typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes ai-dot {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+          30% { transform: translateY(-6px); opacity: 1; }
+        }
+
+        /* Error */
+        .ai-error {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 14px;
+          border-radius: 10px;
+          background: rgba(192, 57, 43, 0.06);
+          border: 1px solid rgba(192, 57, 43, 0.12);
+          color: #c0392b;
+          font-size: 0.8125rem;
+          font-weight: 500;
+        }
+        .ai-retry {
+          margin-left: auto;
+          padding: 4px 10px;
+          border: 1px solid rgba(192, 57, 43, 0.2);
+          border-radius: 6px;
+          background: transparent;
+          color: #c0392b;
+          font-family: var(--font-body);
+          font-size: 0.75rem;
+          font-weight: 600;
+          cursor: pointer;
+        }
+        .ai-retry:hover { background: rgba(192, 57, 43, 0.08); }
+
+        /* Input area */
+        .ai-input-area {
+          display: flex;
+          gap: 8px;
+          align-items: end;
+          padding: 14px 16px;
+          border-top: 1px solid rgba(122, 103, 83, 0.08);
+          flex-shrink: 0;
+        }
+        .ai-input {
+          flex: 1;
+          padding: 10px 14px;
+          border: 1px solid var(--border);
+          border-radius: 14px;
+          background: rgba(255, 255, 255, 0.6);
+          font-family: var(--font-body);
+          font-size: 0.9375rem;
+          color: var(--text);
+          outline: none;
+          resize: none;
+          line-height: 1.5;
+          max-height: 120px;
+          transition: border-color var(--transition);
+        }
+        .ai-input:focus { border-color: var(--accent); }
+        .ai-input::placeholder { color: var(--tertiary); }
+        .ai-send {
+          flex-shrink: 0;
+          width: 38px;
+          height: 38px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: none;
+          border-radius: 12px;
+          background: var(--accent);
+          color: white;
+          font-size: 1.15rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: all var(--transition);
+        }
+        .ai-send:hover:not(:disabled) {
+          background: var(--accent-deep);
+          transform: translateY(-1px);
+        }
+        .ai-send:disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+        }
+
+        @media (max-width: 920px) {
+          .ai-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: min(420px, 100vw);
+            max-height: 100vh;
+            height: 100vh;
+            border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+            z-index: 100;
           }
         }
       `}</style>
-    </div>
-  );
+
+            <style jsx global>{`
+        .ai-msg-html p { margin: 0 0 0.8em; }
+        .ai-msg-html p:last-child { margin-bottom: 0; }
+        .ai-msg-html h2, .ai-msg-html h3 {
+          font-family: var(--font-display);
+          margin: 1em 0 0.4em;
+          font-weight: 400;
+          letter-spacing: -0.01em;
+        }
+        .ai-msg-html h2 { font-size: 1.1rem; }
+        .ai-msg-html h3 { font-size: 1rem; }
+        .ai-msg-html ul, .ai-msg-html ol {
+          padding-left: 1.2em;
+          margin: 0 0 0.8em;
+        }
+        .ai-msg-html li { margin-bottom: 0.3em; }
+        .ai-msg-html strong { font-weight: 600; }
+        .ai-msg-html blockquote {
+          margin: 0.8em 0;
+          padding: 8px 12px;
+          border-left: 2px solid var(--accent);
+          color: var(--muted);
+          font-style: italic;
+        }
+        .ai-msg-html code {
+          padding: 1px 4px;
+          background: rgba(122, 103, 83, 0.08);
+          border-radius: 3px;
+          font-size: 0.88em;
+        }
+      `}</style>
+        </div>
+    );
 }

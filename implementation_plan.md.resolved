@@ -1,0 +1,286 @@
+# rendering_v1 Pipeline Analysis & Optimization Plan
+
+## 1. Pipeline Map
+
+```mermaid
+graph TD
+    A["SmartRenderWorker / LayoutWorker"] --> B["render(payload, video_path, output_path)"]
+    B --> C["resolve_template()"]
+    B --> D["_probe_source_fps(video_path)<br/>→ returns r_frame_rate as N/D fraction"]
+    B --> E["resolve_layout_and_time()"]
+    B --> F["build_ffmpeg_plan(resolved_ir, payload)<br/>→ PlanIR with ops: trim → scale_crop → overlay → encode"]
+    B --> G["generate_text_overlays()<br/>→ PNGs for text zones"]
+    B --> H["execute_plan(plan, input_paths, output_path)"]
+    H --> I["build_ffmpeg_command()<br/>→ Full FFmpeg CLI"]
+    I --> J["Construct filter_complex<br/>setpts, format, scale/crop, overlays"]
+    I --> K["Append encode args<br/>nvenc VBR or libx264 CRF"]
+    I --> L["subprocess.Popen → FFmpeg"]
+    L --> M["Output .mp4 (final deliverable)"]
+    M --> N["Worker uploads to Azure Storage<br/>No post-processing"]
+```
+
+### Stages in order
+
+| # | Stage | File | What happens |
+|---|-------|------|-------------|
+| 1 | Template Resolution | [resolve/firestore_resolver.py](file:///e:/Code/Seone/src/rendering_v1/resolve/firestore_resolver.py) | Loads template JSON from Firestore or local files |
+| 2 | Source Probing | [pipeline.py](file:///e:/Code/Seone/src/rendering_v1/pipeline.py) L102-136 | Probes `r_frame_rate` and `avg_frame_rate` via ffprobe |
+| 3 | Layout & Time Resolution | [layout/resolve.py](file:///e:/Code/Seone/src/rendering_v1/layout/resolve.py) | Converts template bounds → pixel Rects, text → LayoutResult |
+| 4 | Plan Building | [plan/ffmpeg_builder.py](file:///e:/Code/Seone/src/rendering_v1/plan/ffmpeg_builder.py) | Creates [PlanIR](file:///e:/Code/Seone/src/rendering_v1/ir/plan_ir.py#5-13) with ops: trim, scale_crop, overlay(s), encode |
+| 5 | Text Overlay Generation | [exec/overlay_generator.py](file:///e:/Code/Seone/src/rendering_v1/exec/overlay_generator.py) | Rasterizes text → PNG files (cached by fingerprint) |
+| 6 | FFmpeg Command Building | [exec/ffmpeg_executor.py](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py) L663-951 | Translates PlanIR → full [ffmpeg](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#95-97) CLI with filter_complex |
+| 7 | FFmpeg Execution | [exec/ffmpeg_executor.py](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py) L954-1021 | Runs FFmpeg, monitors for catastrophic dup, enforces timeout |
+| 8 | Output Validation | [pipeline.py](file:///e:/Code/Seone/src/rendering_v1/pipeline.py) L867-901 | Checks file size ≥1KB, duration ≥5s, duration coherence |
+| 9 | Upload | [workers.py](file:///e:/Code/Seone/src/core/pipeline/workers.py) | Direct upload to Azure Blob Storage — **no re-encode** |
+
+---
+
+## 2. Root Causes of Large Output Size
+
+### 2.1 Encoding Settings — The Primary Driver
+
+| Backend | Current Settings | Impact |
+|---------|-----------------|--------|
+| **h264_nvenc** | `-cq 21`, `-preset p6`, `-maxrate` up to **18 Mbps**, `-bufsize` up to **36 Mbps** | Very high quality targeting. Social media platforms re-encode anyway; this is overkill for delivery. |
+| **libx264** | `-crf 20`, `-preset medium` | CRF 20 is near-visually-lossless. Social platforms typically accept CRF 23-26 without visible degradation. |
+| **Audio** | `-b:a 128k` AAC | Reasonable — not a major contributor. |
+
+> [!IMPORTANT]
+> CRF 20 (libx264) and CQ 21 (nvenc) are studio-archival quality. For social media delivery, CRF 23 (libx264) or CQ 26 (nvenc) is the standard sweet spot. Raising CRF from 20→23 typically reduces file size by **40-50%** with negligible perceptual loss.
+
+### 2.2 No Output Frame Rate Control
+
+The pipeline **never forces an output FPS**. There is no `-r`, no `-vsync cfr`, no fps filter anywhere in the output command. The output inherits whatever the source video's native frame rate is.
+
+- YouTube sources commonly deliver 30 fps, but can be 60 fps or VFR.
+- A 60 fps source generates roughly **2× the data** of a 30 fps source at the same quality.
+- VFR sources may produce unpredictable frame counts.
+
+### 2.3 Rate Tier Escalation (nvenc)
+
+[_nvenc_rate_tier](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#L195-L203) uses generous rate caps:
+
+```python
+if total_pixels <= 1280 * 720 and fps <= 30.0:
+    return ("4000k", "8000k")     # 720p
+if total_pixels <= 1080 * 1080 and fps <= 30.0:
+    return ("6000k", "12000k")    # 1080×1080
+return ("9000k", "18000k")        # everything else
+```
+
+The "everything else" tier (9 Mbps avg, 18 Mbps peak) applies to **any source over 30 fps OR over 1080×1080**. A typical 1080p@30fps YouTube clip at 1080×1920 falls into this highest tier because `1080*1920 = 2,073,600 > 1,166,400`.
+
+### 2.4 No Pixel Format Enforcement on Output
+
+The `filter_complex` uses `format=yuv420p` on the base video stream, which is correct. But the final encode command doesn't explicitly specify `-pix_fmt yuv420p`, meaning edge cases could produce higher-depth formats.
+
+### 2.5 movflags +faststart
+
+This is correct behavior — it moves the moov atom to the front for streaming. It doesn't increase size, just mentioned for completeness.
+
+---
+
+## 3. Current FPS / Timestamp Behavior
+
+### How source FPS flows through the pipeline
+
+1. **Probing**: [_probe_source_fps](file:///e:/Code/Seone/src/rendering_v1/pipeline.py#L102-L136) reads `r_frame_rate` (preferred) or `avg_frame_rate` from ffprobe. Falls back to `30/1`.
+
+2. **PlanIR metadata**: The probed fps is stored in `plan.metadata["source_fps"]` as a string fraction (e.g., `"30000/1001"`) via [build_ffmpeg_plan](file:///e:/Code/Seone/src/rendering_v1/plan/ffmpeg_builder.py#L167).
+
+3. **Smart render trim**: [_smart_render_trim_strategy](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#L384-L414) uses [source_fps](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#288-294) for frame-accurate trim calculations. It converts timestamps to frame indices using the source fps fraction.
+
+4. **nvenc rate tier**: [_nvenc_rate_tier](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#L195-L203) uses source fps to select bitrate caps.
+
+5. **Output FPS**: **Not controlled**. No `-r`, `-vsync`, or [fps](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#288-294) filter is applied to the output. FFmpeg defaults to copying the source timebase.
+
+### VFR vs CFR
+
+| Condition | Output behavior |
+|-----------|----------------|
+| Source is CFR (e.g., YouTube 30fps) | Output is CFR at source rate |
+| Source is VFR | Output is VFR (timestamps preserved from source) |
+| Source is 60fps | Output is 60fps (double the data) |
+
+The pipeline **does not normalize** frame rate at any stage. The `setpts=PTS-STARTPTS` in the filter resets presentation timestamps to start from zero after trim, which is correct for trim operations, but does not change the frame rate.
+
+---
+
+## 4. Risks of Forcing 24/25 fps
+
+### What could break
+
+| Risk | Severity | Details |
+|------|----------|---------|
+| **Smart render trim precision** | 🔴 High | [_smart_render_trim_strategy](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#384-415) computes `start_frame`, `end_frame`, `preroll_frames` using source fps. If we change output fps but keep source fps for trim math, frame positioning stays correct. If we accidentally change the fps used for trim calculations, we'll get wrong cut points. |
+| **Frame duplication monitor** | 🟡 Medium | [execute_plan](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#954-1021) kills the process if `dup > 1000`. Converting e.g. 23.976→24 or 30→25 will cause FFmpeg to report `dup=N` frames. A 60s clip at 30fps→25fps = ~300 dropped frames. This won't trigger the 1000 threshold, but 30→24 on a 120s clip could. |
+| **Audio sync** | 🟡 Medium | If [fps](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#288-294) filter or `-r` is applied only to video without compensating audio, A/V sync drifts. Must ensure audio duration matches video duration after rate conversion. |
+| **Duration validation** | 🟢 Low | [pipeline.py](file:///e:/Code/Seone/src/rendering_v1/pipeline.py) L886-891 checks output duration ≥5s and ≥50% of clip_duration. Frame rate changes don't affect duration, so this is safe. |
+| **Motion cadence** | 🟡 Medium | 30→25 fps means dropping 1 out of every 6 frames. On talking-head content (the primary use case), this is typically imperceptible. 30→24 is slightly worse (dropping 1/5). 60→24/25 will show visible cadence judder on fast motion. |
+
+### What is safe
+
+- **Trim timestamps**: These are in seconds, not frames. They remain correct regardless of output fps.
+- **Overlay compositing**: Static PNG overlays are not affected by fps changes.
+- **Audio encoding**: 128k AAC is independent of video fps.
+- **faststart**: Unrelated to fps.
+
+---
+
+## 5. Safest Architecture for Final CFR Delivery
+
+### Recommended: Single-point FPS + quality normalization at encode stage
+
+> [!TIP]  
+> The safest place to enforce output fps is in the **encode arguments** of [build_ffmpeg_command](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#663-952), immediately before the output file. This means all upstream stages (trim, filter, overlay) operate at source-native timing, and only the final encode step converts to the target fps.
+
+This avoids touching:
+- Trim logic (which depends on source fps for frame-accurate seeking)
+- Filter graph timing
+- Overlay compositing
+
+**Concrete mechanism**: Add `-r 25` (or `24`) and `-vsync cfr` to the FFmpeg command's output arguments, after the filter_complex but before the output file path. This tells FFmpeg: "whatever frame timing the filter graph produces, re-sample the output to exactly 25 fps CFR."
+
+**Why this works**:
+- `-r` on the output side sets the target frame rate for the muxer
+- `-vsync cfr` ensures constant frame rate (duplicating or dropping frames as needed)
+- The filter graph still processes at source timing — no upstream changes
+- FFmpeg handles the PTS adjustment automatically
+- Audio duration is unaffected (it's passed through separately)
+
+### Architecture decision
+
+```
+Earlier stages (trim, scale, overlay)  →  Source-native timing (preserve flexibility)
+                                        ↓
+Final encode stage                     →  Force CFR at 24/25 fps (-r N -vsync cfr)
+```
+
+This is the **least invasive, most correct** approach.
+
+---
+
+## 6. Concrete Implementation Plan
+
+### Phase 1: Reduce output size (safe, no FPS change)
+
+#### [MODIFY] [ffmpeg_executor.py](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py)
+
+**Change 1a**: Adjust [_standard_encode_args](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#206-244) quality settings
+
+| Setting | Current | Proposed | Rationale |
+|---------|---------|----------|-----------|
+| libx264 CRF | 20 | 23 | Standard social media quality. ~40-50% size reduction. Still excellent quality. |
+| libx264 preset | medium | medium | No change — good balance of speed vs compression. |
+| nvenc -cq | 21 | 26 | Equivalent to ~CRF 23 in visual quality. |
+| nvenc maxrate (1080p social) | 6000k | 4000k | Social platforms re-encode at ~4Mbps anyway. |
+| nvenc maxrate (HD/default) | 9000k | 6000k | Reduces peak bitrate waste. |
+| nvenc bufsize | 2× maxrate | 2× maxrate | Keep ratio. |
+
+**Change 1b**: Add explicit `-pix_fmt yuv420p` to encode output
+
+Ensures no edge case produces higher-depth pixel formats.
+
+---
+
+### Phase 2: Add final-stage CFR output at 24/25 fps
+
+#### [MODIFY] [ffmpeg_executor.py](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py)
+
+**Change 2a**: Add output fps control in [build_ffmpeg_command](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#663-952)
+
+After the encode args are appended (around line 948), add:
+```python
+# Final delivery CFR — applied at muxer level, does not affect filter graph
+target_fps = os.getenv("RENDER_OUTPUT_FPS", "").strip()
+if target_fps:
+    cmd.extend(["-r", target_fps, "-vsync", "cfr"])
+```
+
+This is **opt-in via environment variable** (`RENDER_OUTPUT_FPS=25`), meaning:
+- Existing behavior is preserved by default (no env var = no change)
+- Can be enabled per-deployment without code changes
+- Easy to A/B test
+
+**Change 2b**: Adjust dup-frame kill threshold
+
+The current threshold of `dup > 1000` may need to be relaxed when fps conversion is active. For a 120s clip at 30→25fps, FFmpeg will drop ~600 frames and report them. The existing threshold should be fine (it monitors `dup` not `drop`), but we should verify this with testing.
+
+#### [MODIFY] [pipeline.py](file:///e:/Code/Seone/src/rendering_v1/pipeline.py)
+
+**Change 2c**: Log the target FPS in render metrics
+
+Add `RENDER_OUTPUT_FPS` value to the render_complete log entry for observability.
+
+---
+
+## 7. Validation Plan
+
+### Automated Tests
+
+1. **Unit test: encode args generation**
+   ```
+   cd e:\Code\Seone
+   python -m pytest tests/rendering_v1/ -v
+   ```
+   - Verify [_standard_encode_args](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#206-244) returns the updated CRF/CQ values
+   - Verify `-pix_fmt yuv420p` is included
+   - Verify `-r` and `-vsync cfr` are added when `RENDER_OUTPUT_FPS` is set
+   - Verify `-r` is NOT added when `RENDER_OUTPUT_FPS` is unset
+
+2. **Existing test**:
+   - [test_logo_overlay.py](file:///e:/Code/Seone/tests/rendering_v1/test_logo_overlay.py) — verify it still passes after changes
+
+### Manual Verification (requires your help)
+
+> [!IMPORTANT]
+> These require a real source video and FFmpeg installation. I need your guidance on:
+> 1. Do you have a local test video I can use, or should I create a synthetic one?
+> 2. Can you run a render locally, or must this be tested in the cloud environment?
+
+**Test A: Size reduction verification**
+1. Render the same clip with current settings (baseline)
+2. Render with updated CRF 23 / CQ 26 settings
+3. Compare file sizes and visual quality using [ffprobe](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#99-110) bitrate and SSIM comparison
+
+**Test B: FPS conversion verification**
+1. Set `RENDER_OUTPUT_FPS=25`
+2. Render a clip
+3. Verify with [ffprobe](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#99-110):
+   - Output fps is exactly 25
+   - Duration matches expected clip duration (±0.1s)
+   - Audio duration matches video duration
+   - No errors or warnings in FFmpeg stderr
+
+**Test C: Backward compatibility**
+1. Unset `RENDER_OUTPUT_FPS`
+2. Render a clip
+3. Verify output fps matches source fps (existing behavior preserved)
+
+---
+
+## 8. Files That Would Need Modification
+
+| File | Change | Risk |
+|------|--------|------|
+| [ffmpeg_executor.py](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py) | CRF/CQ adjustments, pix_fmt, fps control | Medium — core encoding logic |
+| [pipeline.py](file:///e:/Code/Seone/src/rendering_v1/pipeline.py) | Logging update only | Low |
+| New: `tests/rendering_v1/test_encode_args.py` | Unit tests for encode argument generation | None (additive) |
+
+---
+
+## 9. Invariants and Fragile Areas
+
+### Invariants the renderer depends on
+
+1. **Source fps is always a valid fraction** — [_normalize_source_fps](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#274-286) and [_source_fps_fraction](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#305-313) enforce fallback to `30/1`
+2. **Trim calculations use source fps, not output fps** — This MUST remain true
+3. **yuv420p base format** — The filter graph enforces this; the encode step should too
+4. **dup > 1000 kills the render** — Safety valve against runaway frame duplication
+5. **movflags +faststart** — Required for streaming playback
+
+### Fragile areas
+
+- **[_nvenc_rate_tier](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#195-204)** uses pixel count thresholds that don't account for portrait vs landscape well. A 1080×1920 portrait video hits the "everything else" tier because `total_pixels > 1080*1080`.
+- **[_smart_render_trim_strategy](file:///e:/Code/Seone/src/rendering_v1/exec/ffmpeg_executor.py#384-415)** is tightly coupled to source fps. Any change to fps flow must not affect this function.
+- **No explicit output duration enforcement** — The duration check is a post-hoc validation, not a constraint passed to FFmpeg.
